@@ -1,5 +1,6 @@
 import pymongo
 import json
+import os
 
 cache = {}
 printCacheHitsAndMisses = False
@@ -39,43 +40,45 @@ def initializeDataStorage(local):
 
     if localStorage:
         print("[dataStorage] LocalStorage is on, mongoDB will not be used.")
+        # Ensure data file exists and load it
         try:
-            dataFile = open("data.json", "r", encoding="utf-8")
-            data = json.load(dataFile)
+            with open("data.json", "r", encoding="utf-8") as dataFile:
+                data = json.load(dataFile)
             print("[dataStorage] Data loaded, making backup...")
-
-            # make backup
-
-            num = 0
-            try:
-                backupNumFile = open("backupNum", "r")
-                num = int(backupNumFile.read())
-            except FileNotFoundError or ValueError:
-                backupNumFile = open("backupNum", "w")
-                backupNumFile.write("0")
-                backupNumFile.close()
-            except:
-                raise
-            finally:
-                backupNumFile.close()
-            backupFile = open(f"dataBackup/backup{num}.json", "w", encoding="utf-8")
-            json.dump(data, backupFile, ensure_ascii=False)
-            backupFile.close()
-
-            backupNumFile = open("backupNum", "w")
-            backupNumFile.write(f"{num + 1}")
-            backupNumFile.close()
-            print(f"[dataStorage] A data backup has been made to dataBackup/backup{num}.json!")
-
-
         except FileNotFoundError:
             data = {}
-            dataFile = open("data.json", "w", encoding="utf-8")
-            json.dump(data, dataFile, ensure_ascii=False)
-        except:
-            raise
-        finally:
-            dataFile.close()
+            with open("data.json", "w", encoding="utf-8") as dataFile:
+                json.dump(data, dataFile, ensure_ascii=False, indent=2)
+            print("[dataStorage] data.json not found; created a new one.")
+
+        # Make backup folder if missing
+        try:
+            os.makedirs("dataBackup", exist_ok=True)
+        except Exception as e:
+            print(f"[dataStorage] WARNING: Could not ensure backup folder: {e}")
+
+        # Read backup number safely
+        num = 0
+        try:
+            with open("backupNum", "r", encoding="utf-8") as f:
+                num = int(f.read().strip() or "0")
+        except (FileNotFoundError, ValueError):
+            try:
+                with open("backupNum", "w", encoding="utf-8") as f:
+                    f.write("0")
+                num = 0
+            except Exception as e:
+                print(f"[dataStorage] WARNING: Could not initialize backupNum: {e}")
+
+        # Write backup file
+        try:
+            with open(os.path.join("dataBackup", f"backup{num}.json"), "w", encoding="utf-8") as backupFile:
+                json.dump(data, backupFile, ensure_ascii=False, indent=2)
+            with open("backupNum", "w", encoding="utf-8") as f:
+                f.write(str(num + 1))
+            print(f"[dataStorage] A data backup has been made to dataBackup/backup{num}.json!")
+        except Exception as e:
+            print(f"[dataStorage] WARNING: Failed to write backup: {e}")
 
 
 def reloadCache():
