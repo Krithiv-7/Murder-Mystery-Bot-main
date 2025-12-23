@@ -3,6 +3,8 @@ A town of salem/mafia-like game inside Discord! This bot brings the classic soci
 
 Invite the bot to your server: https://discord.com/oauth2/authorize?client_id=1452886075621249024&permissions=268823632&integration_type=0&scope=bot
 
+Top.gg Listing: https://top.gg/bot/1452886075621249024
+
 Join our support server: https://discord.gg/kriti
 GitHub repository: https://github.com/Krithiv-7/Murder-Mystery-Bot-main
 
