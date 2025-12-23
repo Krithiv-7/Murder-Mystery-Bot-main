@@ -1656,7 +1656,8 @@ async def on_guild_join(guild):
 @client.event
 async def on_member_update(before, after):
     if after.status == discord.Status.offline:
-        if dataStorage.getGuildData(after.guild, "kickOfflinePlayers", default=True):
+        # Respect guild setting; default now allows offline players
+        if dataStorage.getGuildData(after.guild, "kickOfflinePlayers", default=False):
             player = getPlayer(after, after.guild)
             if player is not None:
                 if player.inGame:
@@ -1785,7 +1786,8 @@ async def join(ctx, arg="None"):
                     if not isSpectating(author):
                         if not guild.id in availableGames:
                             availableGames[guild.id] = []
-                        if author.status != discord.Status.offline or not dataStorage.getGuildData(guild, "kickOfflinePlayers", default=True):
+                        # Allow joining when offline unless the guild explicitly enables kicking offline players
+                        if author.status != discord.Status.offline or not dataStorage.getGuildData(guild, "kickOfflinePlayers", default=False):
                             if availableGames[guild.id] != []:
                                 # sort the games to make the fullest games appear first
                                 availableGames[guild.id].sort(reverse=True, key=lambda x: len(x.players))

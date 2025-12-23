@@ -1,6 +1,7 @@
 import discord
 import dataStorage
 import json
+import os
 
 defaultPermissions = None
 permissionsList = None
@@ -42,12 +43,19 @@ def memberHasPermission(member, permission: str, **kwargs):
 
 
 def permissionInPermissionDic(dic: dict, permission: str) -> bool:
+    # Guard against missing or invalid permission dictionaries
+    if not isinstance(dic, dict):
+        return False
+
     gotPermission = False
     permissionList = permission.split(".")
     currentPermissionPosition = dic
     for v in permissionList:
+        # If at any point the current position is not a dict, stop descending
+        if not isinstance(currentPermissionPosition, dict):
+            break
         if v in currentPermissionPosition:
-            if type(currentPermissionPosition[v]).__name__ == "dict":
+            if isinstance(currentPermissionPosition[v], dict):
                 currentPermissionPosition = currentPermissionPosition[v]
                 continue
             else:
@@ -77,13 +85,25 @@ def getPermissionList():
     global permissionsList, defaultPermissions
     if permissionsList is None:
         try:
-            permissionsFile = open("permissions.json", "r")
-            jsonData = json.load(permissionsFile)
-            permissionsList = jsonData["permissions"]
-            defaultPermissions = jsonData["defaultPermissions"]
-            permissionsFile.close()
+            permissionsFile = open("permissions.json", "r", encoding="utf-8")
         except FileNotFoundError:
+            # Try loading relative to this file's directory
+            try:
+                base_dir = os.path.dirname(__file__)
+                permissionsFile = open(os.path.join(base_dir, "permissions.json"), "r", encoding="utf-8")
+            except FileNotFoundError:
+                permissionsFile = None
+
+        if permissionsFile is not None:
+            jsonData = json.load(permissionsFile)
+            permissionsList = jsonData.get("permissions", {})
+            defaultPermissions = jsonData.get("defaultPermissions", {})
+            permissionsFile.close()
+        else:
             print("ERROR: permissions.json not found! Permissions might not work properly.")
+            # Ensure sane defaults to avoid NoneType errors downstream
+            permissionsList = {}
+            defaultPermissions = {}
 
     return permissionsList
 
@@ -96,13 +116,24 @@ def getDefaultPermissions(**kwargs) -> dict:
             return p
     if defaultPermissions is None:
         try:
-            permissionsFile = open("permissions.json", "r")
-            jsonData = json.load(permissionsFile)
-            permissionsList = jsonData["permissions"]
-            defaultPermissions = jsonData["defaultPermissions"]
-            permissionsFile.close()
+            permissionsFile = open("permissions.json", "r", encoding="utf-8")
         except FileNotFoundError:
+            # Try loading relative to this file's directory
+            try:
+                base_dir = os.path.dirname(__file__)
+                permissionsFile = open(os.path.join(base_dir, "permissions.json"), "r", encoding="utf-8")
+            except FileNotFoundError:
+                permissionsFile = None
+
+        if permissionsFile is not None:
+            jsonData = json.load(permissionsFile)
+            permissionsList = jsonData.get("permissions", {})
+            defaultPermissions = jsonData.get("defaultPermissions", {})
+            permissionsFile.close()
+        else:
             print("ERROR: permissions.json not found! Permissions might not work properly.")
+            # Fall back to empty permissions dict instead of None
+            defaultPermissions = {}
 
     return defaultPermissions
 
