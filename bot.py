@@ -1608,9 +1608,14 @@ async def on_message(message):
 
         if dataStorage.getGuildData(message.guild, "useJoinChannel"):
             if message.channel == message.guild.get_channel(dataStorage.getGuildData(message.guild, "joinChannel")):
-                if message.content != "!join":
+                prefix = dataStorage.getGuildData(message.guild, "prefix", default="!")
+                allowed_starts = (f"{prefix}join", f"{prefix}create")
+                if not any(message.content.strip().lower().startswith(s) for s in allowed_starts):
                     if message.author != client.user:
-                        await message.delete()
+                        try:
+                            await message.delete()
+                        except Exception:
+                            pass
 
         if message.author.id == dataStorage.getGuildData(message.guild, "setupMember"):
             if message.channel.id == dataStorage.getGuildData(message.guild, "setupChannel"):
@@ -1759,14 +1764,14 @@ async def showAllRunningGames(ctx):
 
 
 @client.command()
-async def join(ctx, arg="None"):
+async def join(ctx, indexStr: str = None):
     if await permissions.hasPermission(ctx, "member.join"):
         author = ctx.author
         guild = ctx.guild
         channel = ctx.message.channel
         allowedToRunCommandHere = True
         joinChannel = guild.get_channel(dataStorage.getGuildData(ctx.guild, "joinChannel"))
-        if not ctx.message.author.guild_permissions.administrator or "-overwriteAdminWarning" in arg:
+        if not ctx.message.author.guild_permissions.administrator or (indexStr is not None and "-overwriteAdminWarning" in indexStr):
             if dataStorage.getGuildData(ctx.guild, "useJoinChannel"):
                 if joinChannel is not None:
                     if channel.id == dataStorage.getGuildData(ctx.guild, "joinChannel"):
@@ -1781,14 +1786,20 @@ async def join(ctx, arg="None"):
                         allowedToRunCommandHere = False
                 else:
                     await ctx.send(embed=discord.Embed(title=":arrow_forward: Joining a game!",
-                                                       description="Finding a game to join or creating a new one, this might take a few seconds!",
+                                                       description="Joining a specific lobby by ID.",
                                                        color=0x00b8ff))
             else:
                 if getPlayer(ctx.author, ctx.guild) is None:
                     await ctx.send(embed=discord.Embed(title=":arrow_forward: Joining a game!",
-                                                       description="Finding a game to join or creating a new one, this might take a few seconds!",
+                                                       description="Joining a specific lobby by ID.",
                                                        color=0x00b8ff))
             if allowedToRunCommandHere:
+                # Require an ID argument; do not auto-create lobbies from join
+                if indexStr is None:
+                    await ctx.send(embed=discord.Embed(title=":x: Please provide a lobby ID",
+                                                       description=f"Use {dataStorage.getGuildData(ctx.guild, 'prefix', default='!')}list to find lobby IDs, then run {dataStorage.getGuildData(ctx.guild, 'prefix', default='!')}join <ID>. To create a lobby, use {dataStorage.getGuildData(ctx.guild, 'prefix', default='!')}create.",
+                                                       color=0xff0000))
+                    return
                 isInGame = False
                 if not guild.id in allPlayers:
                     allPlayers[guild.id] = []
@@ -1799,31 +1810,42 @@ async def join(ctx, arg="None"):
 
                 if not isInGame:
                     if not isSpectating(author):
-                        if not guild.id in availableGames:
-                            availableGames[guild.id] = []
-                        # Allow joining when offline unless the guild explicitly enables kicking offline players
-                        if author.status != discord.Status.offline or not dataStorage.getGuildData(guild, "kickOfflinePlayers", default=False):
-                            if availableGames[guild.id] != []:
-                                # sort the games to make the fullest games appear first
-                                availableGames[guild.id].sort(reverse=True, key=lambda x: len(x.players))
-
-                                foundGame = False
-                                for game in availableGames[guild.id]:
-                                    if len(game.players) < dataStorage.getGuildData(ctx.guild, "maxPlayers",
-                                                                                    default=30):
-                                        await game.addPlayer(author)
-                                        foundGame = True
-                                        break
-
-                                if foundGame == False:
-                                    # create new game because all other games are full
-                                    newGame = await createNewGame(guild, False)
-                                    await newGame.addPlayer(author)
-
-                            else:
-                                # create new game and add the player to it
-                                newGame = await createNewGame(guild, False)
-                                await newGame.addPlayer(author)
+                        # Only join a specific lobby by ID
+                        try:
+                            index = int(indexStr)
+                        except ValueError:
+                            await ctx.send(embed=discord.Embed(title=":x: Invalid ID",
+                                                               description="Please provide a numeric lobby ID.",
+                                                               color=0xff0000))
+                            return
+                        if not guild.id in currentGames:
+                            currentGames[guild.id] = []
+                        if 0 <= index < len(currentGames[guild.id]):
+                            game_to_join = currentGames[guild.id][index]
+                            # Only allow joining lobbies that haven't started yet
+                            if game_to_join.started:
+                                await ctx.send(embed=discord.Embed(title=":x: This lobby has already started",
+                                                                   description="Join an available lobby that hasn't started yet or create a new one with the create command.",
+                                                                   color=0xff0000))
+                                return
+                            # Enforce max players
+                            if len(game_to_join.players) >= dataStorage.getGuildData(ctx.guild, "maxPlayers", default=30):
+                                await ctx.send(embed=discord.Embed(title=":x: This lobby is full",
+                                                                   description="Please choose another lobby or create a new one.",
+                                                                   color=0xff0000))
+                                return
+                            # Allow joining when offline unless guild disables
+                            if author.status == discord.Status.offline and dataStorage.getGuildData(guild, "kickOfflinePlayers", default=False):
+                                embed = discord.Embed(title="You can't play if your status is offline!",
+                                                      description="Please change your status and try again.",
+                                                      color=0xff0000)
+                                await channel.send(embed=embed)
+                                return
+                            await game_to_join.addPlayer(author)
+                        else:
+                            await ctx.send(embed=discord.Embed(title=":x: Lobby not found",
+                                                               description=f"Use {dataStorage.getGuildData(ctx.guild, 'prefix', default='!')}list to find lobby IDs.",
+                                                               color=0xff0000))
 
                         else:
                             embed = discord.Embed(title="You can't play if your status is offline!",
@@ -1915,31 +1937,35 @@ async def endGame(ctx, indexStr=None):
 
 
 # command for creating a new empty game
-@client.command()
+@client.command(aliases=["create"])
 async def createGame(ctx, debugStr="False"):
-    if await permissions.hasPermission(ctx, "debug.createGame"):
-        if debugStr == "False":
-            debug = False
-        elif debugStr == "True":
-            debug = True
-        else:
-            debug = False
+    # Allow members to create lobbies; admins can use debug flag if needed
+    has_member_create = await permissions.hasPermission(ctx, "member.create")
+    has_debug_create = await permissions.hasPermission(ctx, "debug.createGame")
+    if not (has_member_create or has_debug_create):
+        return
 
-        game = await createNewGame(ctx.message.guild, debug)
-        if not debug:
-            embed = discord.Embed(title="A new game has successfully been created!",
-                                  description=f"with index {currentGames[ctx.guild.id].index(game)}")
-        else:
-            embed = discord.Embed(title="A new game has been created in debugging mode!",
-                                  description=f"with index {currentGames[ctx.guild.id].index(game)}")
-        await ctx.send(embed=embed)
+    if debugStr == "True" and has_debug_create:
+        debug = True
+    else:
+        debug = False
+
+    game = await createNewGame(ctx.message.guild, debug)
+    idx = currentGames[ctx.guild.id].index(game)
+    if not debug:
+        embed = discord.Embed(title="A new lobby has been created!",
+                              description=f"Lobby ID: {idx}. Share this ID for others to join with {dataStorage.getGuildData(ctx.guild, 'prefix', default='!')}join {idx}")
+    else:
+        embed = discord.Embed(title="A new lobby has been created in debugging mode!",
+                              description=f"Lobby ID: {idx}")
+    await ctx.send(embed=embed)
 
 
 @client.command()
 async def list(ctx):
     if await permissions.hasPermission(ctx, "member.list"):
         embed = discord.Embed(title="Currently running games",
-                              description="Here is a list of all currently running games.\nUse !spectate <ID> to spectate a game.",
+                              description="Here is a list of all currently running games.\nUse !join <ID> to join a lobby that hasn't started yet.\nUse !spectate <ID> to watch a game.",
                               color=0x0088ff)
         if not ctx.guild.id in currentGames:
             currentGames[ctx.guild.id] = []
