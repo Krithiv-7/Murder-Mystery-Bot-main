@@ -4,7 +4,7 @@ This is a game of murder mystery inside Discord. Every player receives a role, a
 ## Tutorial Overview
 This tutorial is split into four parts:
 - Game: How the game itself works
-- Roles: A list of all roles in the game
+- Roles: See the full list in [help-roles.md](help-roles.md)
 - Items: A list of all items in the game
 - Commands: A list of all commands you can use during the game
 
