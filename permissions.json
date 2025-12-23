@@ -1,0 +1,67 @@
+{
+  "permissions": {
+    "admin": {
+      "purge": true,
+      "endAllGames": true,
+      "endGame": true,
+      "setup": true,
+      "settings": true,
+      "prefix":  true,
+      "permissions": {
+        "addPermission": true,
+        "removePermission": true,
+        "permissions": true
+      },
+      "game": {
+        "giveGold": true,
+        "kick": true,
+        "startGame": true
+      }
+    },
+    "member": {
+      "help": true,
+      "join": true,
+      "create": true,
+      "spectate": true,
+      "list": true,
+      "levels": {
+        "level": true,
+        "objective": true,
+        "stats": true
+      }
+    },
+    "debug": {
+      "createGame": true,
+      "objectives": {
+        "addObjectiveProgress": true,
+        "giveObjective": true,
+        "completeCurrentObjective": true,
+        "skipObjectiveTimer": true
+      },
+      "dataStorage":{
+        "get_player_data": true,
+        "set_player_data": true
+      },
+      "game": {
+        "setMoon": true,
+        "setWeather": true,
+        "skipNight": true,
+        "skipVotes": true
+      }
+    }
+  },
+  "defaultPermissions":{
+    "member": {
+      "help": true,
+      "join": true,
+      "create": true,
+      "spectate": true,
+      "list": true,
+      "levels": {
+        "level": true,
+        "objective": true,
+        "stats": true
+      }
+    }
+  }
+}

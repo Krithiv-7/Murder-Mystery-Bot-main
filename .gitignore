@@ -32,6 +32,7 @@ mongoDBLoginInfo.txt
 *.db
 *.sqlite
 *.json
+!permissions.json
 
 # Logs
 *.log
