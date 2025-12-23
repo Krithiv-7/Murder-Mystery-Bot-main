@@ -9,6 +9,11 @@ GitHub repository: https://github.com/Krithiv-7/Murder-Mystery-Bot-main
 # Running the bot yourself
 If you need help, join our Discord server: https://discord.gg/kriti
 
+## Support & Maintenance
+- Actively maintained: Issues and improvements are addressed regularly.
+- Found a bug? Please open an issue on the repository or join the support server for help.
+- Suggestions welcome: create an issue or drop by the server to discuss.
+
 ## Prerequisites
 - Python 3.7 or higher (Python 3.13+ recommended)
 - pip (Python package manager)
