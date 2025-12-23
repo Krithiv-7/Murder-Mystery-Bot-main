@@ -11,9 +11,15 @@ def getTutorialEmbeds(guild) -> dict:
                           description="This is a game of Murder Mystery inside of discord. Every player receives a role, and one of them is the murderer. All the other players must figure out who the murderer and kill them is before the murderer kills them first!",
                           color=0x00b8ff))
     gameTutorialChannel, rolesTutorialChannel, itemsTutorialChannel, commandsTutorialChannel = guild.get_channel(dataStorage.getGuildData(guild, 'gameTutorialChannel')), guild.get_channel(dataStorage.getGuildData(guild, "rolesTutorialChannel")), guild.get_channel(dataStorage.getGuildData(guild, "itemsTutorialChannel")), guild.get_channel(dataStorage.getGuildData(guild, "commandsTutorialChannel"))
+    # Prepare safe references to tutorial channels (fallback to text when channels are missing)
+    ref_game = gameTutorialChannel.mention if gameTutorialChannel is not None else "the game tutorial"
+    ref_roles = rolesTutorialChannel.mention if rolesTutorialChannel is not None else "the roles list"
+    ref_items = itemsTutorialChannel.mention if itemsTutorialChannel is not None else "the items list"
+    ref_commands = commandsTutorialChannel.mention if commandsTutorialChannel is not None else f"{p}advancedHelp"
+
     if dataStorage.getGuildData(guild, "useTutorialChannels") and gameTutorialChannel is not None and rolesTutorialChannel is not None and itemsTutorialChannel is not None and commandsTutorialChannel is not None:
         embed = discord.Embed(title="Tutorial",
-                              description=f"This tutorial is split in 4 parts: \n{guild.get_channel(dataStorage.getGuildData(guild, 'gameTutorialChannel')).mention} is about how the game itself works\n{rolesTutorialChannel.mention} is a list of all roles in the game\n{itemsTutorialChannel.mention} is for a list of all items in the game\n{commandsTutorialChannel.mention} is a list of all commands you can use during the game",
+                      description=f"This tutorial is split in 4 parts: \n{ref_game} is about how the game itself works\n{ref_roles} is a list of all roles in the game\n{ref_items} is for a list of all items in the game\n{ref_commands} is a list of all commands you can use during the game",
                               color=0x00b8ff)
         if dataStorage.getGuildData(guild, "useJoinChannel") and guild.get_channel(dataStorage.getGuildData(guild, "joinChannel")) is not None:
             embed.add_field(name="Joining a game",
@@ -181,7 +187,7 @@ def getTutorialEmbeds(guild) -> dict:
                             value=f'To join a game, use the command f"{p}join"',
                             inline=False)
         embed.add_field(name="Roles",
-                        value=f"Everyone gets a special role assigned, such as murderer, detective, doctor, ect... That role will have special abilities that can only be used at night time. A full list of all roles can be found here: {rolesTutorialChannel.mention}",
+                value=f"Everyone gets a special role assigned, such as murderer, detective, doctor, etc. That role will have special abilities that can only be used at night time. A full list of all roles can be found here: {ref_roles}",
                         inline=False)
         embed.add_field(name="Day/night cycle",
                         value="In the game there's a day/night cycle that will cycle through every few minutes. During the day and night there are multiple things that can happen:",
@@ -216,13 +222,13 @@ def getTutorialEmbeds(guild) -> dict:
         embed = discord.Embed(title=":full_moon: During nighttime",
                               description="Unlike day time, night time won't follow a specific order of event that will happen, rather, things will happen based on what you/other players do.\nThe following things can happen during night time:")
         embed.add_field(name="Shop",
-                        value=f"During night time, you can access the shop with !shop. In the shop you can spend the gold you earned on a variety of items.",
+                value=f"During night time, you can access the shop with !shop. In the shop you can spend the gold you earned on a variety of items.",
                         inline=False)
         embed.add_field(name="Use your role's special ability",
-                        value=f"During the night you can use your role's special ability.",
+                value=f"During the night you can use your role's special ability.",
                         inline=False)
         embed.add_field(name="And more!",
-                        value=f"What happens during night time depends on what your role is, what other people's roles are, what items you use, ect...",
+                value=f"What happens during night time depends on what your role is, what other people's roles are, what items you use, etc.",
                         inline=False)
         embeds["game"].append(embed)
 
