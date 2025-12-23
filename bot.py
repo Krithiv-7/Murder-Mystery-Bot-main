@@ -1,6 +1,7 @@
 # library imports
 import asyncio
 import discord
+from discord import app_commands
 import os
 from discord.ext import commands
 from discord.utils import get
@@ -2632,7 +2633,62 @@ async def on_ready():
                 mainGameRolePosition = r.position
         mainGameRolePosition += 1
 
+    # Sync slash commands (app commands)
+    try:
+        synced = await client.tree.sync()
+        print(f"Synced {len(synced)} slash command(s)")
+    except Exception as e:
+        print(f"Failed to sync app commands: {e}")
+
     await client.change_presence(status=discord.Status.online, activity=discord.Game(f"!help | !setup | {shortMainServerInvite}"))
+
+
+# Slash commands
+@client.tree.command(name="ping", description="Check bot latency")
+async def ping(interaction: discord.Interaction):
+    try:
+        await interaction.response.send_message(f"Pong! {round(client.latency * 1000)} ms", ephemeral=True)
+    except Exception:
+        # Fallback in rare cases when initial response is already used
+        await interaction.followup.send(f"Pong! {round(client.latency * 1000)} ms", ephemeral=True)
+
+
+@client.tree.command(name="help", description="Show basic bot help")
+async def slash_help(interaction: discord.Interaction):
+    # Respect existing permission system for help
+    try:
+        allowed = permissions.memberHasPermission(interaction.user, "member.help")
+    except Exception:
+        allowed = True  # If permission check fails, default to allow showing help
+
+    if not allowed:
+        await interaction.response.send_message(":closed_lock_with_key: You don't have permission to view help.", ephemeral=True)
+        return
+
+    # Always show a concise help embed with the actual server prefix
+    prefix = dataStorage.getGuildData(interaction.guild, "prefix", default="!")
+    help_embed = discord.Embed(title="Bot Help", color=0x00b8ff)
+    help_embed.add_field(name="Prefix", value=f"Current server prefix: {prefix}", inline=False)
+    help_embed.add_field(
+        name="Getting Started",
+        value=f"Use {prefix}help for detailed help or {prefix}advancedHelp for categories. Basic slash commands: /ping, /help.",
+        inline=False,
+    )
+    help_embed.add_field(
+        name="Common Commands",
+        value=f"{prefix}join, {prefix}list, {prefix}spectate [id], {prefix}objective, {prefix}level [@user]",
+        inline=False,
+    )
+
+    await interaction.response.send_message(embed=help_embed, ephemeral=True)
+
+    # If tutorial embeds are configured, send them as follow-ups (also ephemeral)
+    try:
+        tutorial_embeds = tutorial.getTutorialEmbeds(interaction.guild).get("commands", [])
+        for e in tutorial_embeds:
+            await interaction.followup.send(embed=e, ephemeral=True)
+    except Exception:
+        pass
 
 
 def getLen(x):

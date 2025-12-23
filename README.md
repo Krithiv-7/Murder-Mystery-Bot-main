@@ -1,7 +1,7 @@
 # Murder-Mystery-Bot
 A town of salem/mafia-like game inside Discord! This bot brings the classic social deduction game experience to your Discord server.
 
-Invite the bot to your server: https://discord.com/oauth2/authorize?client_id=1452886075621249024&permissions=268823632&integration_type=0&scope=bot
+Invite the bot to your server: https://discord.com/oauth2/authorize?client_id=1452886075621249024&permissions=268823632&integration_type=0&scope=bot%20applications.commands
 
 Top.gg Listing: https://top.gg/bot/1452886075621249024
 
@@ -91,7 +91,7 @@ This bot can either use a json file or MongoDB as a database! By default it uses
 
 # Important Notes
 
-⚠️ **This bot uses the discord.py commands library** and does **NOT** support slash commands. It requires the Message Content Intent to be enabled.
+ℹ️ **This bot primarily uses the discord.py commands library** (prefix commands), and now includes basic slash commands like `/ping` and `/help`. Make sure the invite scope includes `applications.commands`.
 
 ⚠️ **All Privileged Intents must be enabled** in the Discord Developer Portal under the Bot settings:
 - Presence Intent
