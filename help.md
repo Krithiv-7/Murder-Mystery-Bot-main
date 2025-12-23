@@ -6,6 +6,7 @@ This tutorial is split into four parts:
 - Game: How the game itself works
 - Roles: See the full list in [help-roles.md](help-roles.md)
 - Items: A list of all items in the game
+ - Items: See the full list in [help-items.md](help-items.md)
 - Commands: A list of all commands you can use during the game
 
 ## Joining a Game
