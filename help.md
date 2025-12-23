@@ -1,47 +1,56 @@
-# Murder‑Mystery‑Bot — Help (Basics)
+# Welcome to Murder Mystery
+This is a game of murder mystery inside Discord. Every player receives a role, and one of them is the murderer. All the other players must figure out who the murderer is and execute them before the murderer kills them first.
 
-Last updated: December 23, 2025
+## Tutorial Overview
+This tutorial is split into four parts:
+- Game: How the game itself works
+- Roles: A list of all roles in the game
+- Items: A list of all items in the game
+- Commands: A list of all commands you can use during the game
 
-This guide covers the core commands most players will use. The bot runs via message‑based commands (no slash commands). Enable the Message Content Intent in the Discord Developer Portal for your bot.
+## Joining a Game
+Use `!join` in the allowed channel to join the next game.
 
-## Getting Started
-- Install and run: See [README.md](README.md) for setup instructions.
-- Prefix: Default prefix is `!`. Change via `!prefix <new>`.
-- Join channel: Server admins can configure a dedicated join channel during `!setup`.
+## Roles
+Everyone gets a special role assigned, such as murderer, detective, doctor, etc. That role will have special abilities that can only be used at night time.
 
-## Quick Play
-1. Run `!setup` as an admin in a server to initialize.
-2. Use `!join` in the allowed channel to join the next game.
-3. When enough players join, the game starts automatically after a short countdown.
+## Day/Night Cycle
+The game cycles between day and night every few minutes.
 
-## Basic Player Commands
-- `!join [ -overwriteAdminWarning ]`: Join an available game. Admins are warned to play without admin perms for fairness.
-- `!list`: Show running games and IDs.
-- `!spectate <ID>`: Spectate a running game.
-- `!leave`: Leave your current game.
-- `!vote <@player>`: Vote to execute a player during day.
-- `!whisper <@player>`: Create a temporary private channel with another player (deleted at night).
-- `!shop`: View purchasable items during night.
-- `!buy <itemId>`: Purchase an item.
-- `!use <itemId> [arg]`: Use an item (some need a target).
-- `!balance` (aliases: `!money`, `!gold`, `!bal`): Show your gold.
+### ☀️ During Daytime
+The following things will happen during daytime (in order):
+1. Sunrise: All players are locked out of their night channels and the daytime channel opens.
+2. Deaths Announcement (optional): If someone got killed last night, everyone is notified when it becomes daytime.
+3. Gold Per Day Increase (optional): Everyone receives gold each day. This amount starts at 1 and increases by 1 every 3 days. If 5 or fewer players remain, it also increases by 1.
+4. Gold Distribution: Everyone receives gold based on the current gold-per-day.
+5. Voting: Vote someone to execute using `!vote <player>`. If the murderer is executed, innocents win.
+6. Execution: The most voted player gets executed and removed from the game.
+7. Weather Forecast: Upcoming weather and moonlight for the night are shown. Different weather can affect different roles.
+8. Sunset: Daytime channel locks; nighttime channels open.
+
+### 🌕 During Nighttime
+Nighttime does not follow a fixed order; actions happen based on what players do:
+- Shop: Use `!shop` to view and purchase items with your gold. Buy items with `!buy <itemId>`.
+- Role Abilities: Use your role’s special ability during the night.
+- Other Events: Outcomes depend on roles, items used, and player actions.
+
+## Basic Commands
+- `!join` — Join a game
+- `!list` — Show running games and IDs
+- `!spectate <ID>` — Spectate a running game
+- `!leave` — Leave your current game
+- `!vote <@player>` — Vote to execute a player during day
+- `!whisper <@player>` — Temporary private channel with another player (deleted at night)
+- `!shop` — View items available at night
+- `!buy <itemId>` — Buy an item from the shop
+- `!use <itemId> [arg]` — Use an item (some require a target)
+- `!balance` (aliases: `!money`, `!gold`, `!bal`) — Show your gold
 
 ## Advanced Docs
 - Advanced/Admin Commands: [help-advanced.md](help-advanced.md)
 - Server Settings Reference: [help-settings.md](help-settings.md)
 
-## Notes
-- Admins can change the prefix with `!prefix <new>`.
-- If a dedicated join channel is enabled, only `!join` is allowed there; other messages may be deleted.
-
-## Tips
-- Games cycle between day and night; items are mostly used at night.
-- Broadcaster role affects item availability.
-- If a dedicated join channel is enabled, only `!join` is allowed there; other messages may be deleted.
-
-## Support
-- Need help or want to report a bug? See the support info in [README.md](README.md) or use `!dc` to get the support invite shown by the bot.
+## Support & Links
 - Discord server: https://discord.gg/kriti
 - GitHub: https://github.com/Krithiv-7/Murder-Mystery-Bot-main
-
-See also: [Terms of Service](tos.md), [Privacy Policy](pp.md), and [Code of Conduct](CODE_OF_CONDUCT.md).
+- Policies: [Terms of Service](tos.md), [Privacy Policy](pp.md), [Code of Conduct](CODE_OF_CONDUCT.md)
