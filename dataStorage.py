@@ -6,13 +6,16 @@ cache = {}
 printCacheHitsAndMisses = False
 
 
+BASE_DIR = os.path.dirname(__file__)
+
+
 def initializeDataStorage(local):
     global localStorage, data, cluser, collection
     localStorage = local
     if not localStorage:
         print("[dataStorage] Connecting to mongoDB...")
         try:
-            mongoLoginInfoFile = open("mongoDBLoginInfo.txt", "r")
+            mongoLoginInfoFile = open(os.path.join(BASE_DIR, "mongoDBLoginInfo.txt"), "r", encoding="utf-8")
         except FileNotFoundError:
             print(
                 "[dataStorage] File mongoDBLoginInfo.txt was not found! If you don't want to use mongoDB for data storage, set localStorage to True in bot.py to use json instead.")
@@ -42,29 +45,40 @@ def initializeDataStorage(local):
         print("[dataStorage] LocalStorage is on, mongoDB will not be used.")
         # Ensure data file exists and load it
         try:
-            with open("data.json", "r", encoding="utf-8") as dataFile:
+            with open(os.path.join(BASE_DIR, "data.json"), "r", encoding="utf-8") as dataFile:
                 data = json.load(dataFile)
             print("[dataStorage] Data loaded, making backup...")
         except FileNotFoundError:
             data = {}
-            with open("data.json", "w", encoding="utf-8") as dataFile:
+            with open(os.path.join(BASE_DIR, "data.json"), "w", encoding="utf-8") as dataFile:
                 json.dump(data, dataFile, ensure_ascii=False, indent=2)
             print("[dataStorage] data.json not found; created a new one.")
+        except json.JSONDecodeError:
+            # Handle corrupted JSON by backing it up and starting fresh
+            corrupted_path = os.path.join(BASE_DIR, "data.json.corrupt")
+            try:
+                os.replace(os.path.join(BASE_DIR, "data.json"), corrupted_path)
+                print(f"[dataStorage] WARNING: data.json corrupt; backed up to {corrupted_path} and recreated.")
+            except Exception:
+                print("[dataStorage] WARNING: data.json corrupt and could not be backed up; recreating.")
+            data = {}
+            with open(os.path.join(BASE_DIR, "data.json"), "w", encoding="utf-8") as dataFile:
+                json.dump(data, dataFile, ensure_ascii=False, indent=2)
 
         # Make backup folder if missing
         try:
-            os.makedirs("dataBackup", exist_ok=True)
+            os.makedirs(os.path.join(BASE_DIR, "dataBackup"), exist_ok=True)
         except Exception as e:
             print(f"[dataStorage] WARNING: Could not ensure backup folder: {e}")
 
         # Read backup number safely
         num = 0
         try:
-            with open("backupNum", "r", encoding="utf-8") as f:
+            with open(os.path.join(BASE_DIR, "backupNum"), "r", encoding="utf-8") as f:
                 num = int(f.read().strip() or "0")
         except (FileNotFoundError, ValueError):
             try:
-                with open("backupNum", "w", encoding="utf-8") as f:
+                with open(os.path.join(BASE_DIR, "backupNum"), "w", encoding="utf-8") as f:
                     f.write("0")
                 num = 0
             except Exception as e:
@@ -72,9 +86,9 @@ def initializeDataStorage(local):
 
         # Write backup file
         try:
-            with open(os.path.join("dataBackup", f"backup{num}.json"), "w", encoding="utf-8") as backupFile:
+            with open(os.path.join(BASE_DIR, "dataBackup", f"backup{num}.json"), "w", encoding="utf-8") as backupFile:
                 json.dump(data, backupFile, ensure_ascii=False, indent=2)
-            with open("backupNum", "w", encoding="utf-8") as f:
+            with open(os.path.join(BASE_DIR, "backupNum"), "w", encoding="utf-8") as f:
                 f.write(str(num + 1))
             print(f"[dataStorage] A data backup has been made to dataBackup/backup{num}.json!")
         except Exception as e:
@@ -316,9 +330,12 @@ def getAllGuilds():
 
 def updateData():
     if localStorage:
-        dataFile = open("data.json", "w", encoding="utf-8")
-        json.dump(data, dataFile, ensure_ascii=False, indent=2)
-        dataFile.close()
+        # Atomic write to avoid corrupting data.json
+        temp_path = os.path.join(BASE_DIR, "data.json.tmp")
+        final_path = os.path.join(BASE_DIR, "data.json")
+        with open(temp_path, "w", encoding="utf-8") as dataFile:
+            json.dump(data, dataFile, ensure_ascii=False, indent=2)
+        os.replace(temp_path, final_path)
 
 
 def getLen(x):

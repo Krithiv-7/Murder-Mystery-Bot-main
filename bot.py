@@ -1,6 +1,7 @@
 # library imports
 import asyncio
 import discord
+import os
 from discord.ext import commands
 from discord.utils import get
 import random
@@ -2351,7 +2352,8 @@ async def settings(ctx, setting=None, value=None):
                 voiceChannelLockString = "Yes"
             else:
                 voiceChannelLockString = "No"
-            if dataStorage.getGuildData(ctx.guild, "kickOfflinePlayers", default=True):
+            # Display reflects default of allowing offline players unless explicitly enabled
+            if dataStorage.getGuildData(ctx.guild, "kickOfflinePlayers", default=False):
                 kickOfflinePlayersString = "Yes"
             else:
                 kickOfflinePlayersString = "No"
@@ -2387,7 +2389,8 @@ async def settings(ctx, setting=None, value=None):
                     await ctx.send(embed=discord.Embed(title=":x: This setting requires the permission 'move members'.", description="Please add the permission 'move members' to the bot's role in your server's settings", color=0xff0000))
 
             elif setting.lower().strip() == "kickofflineplayers":
-                if dataStorage.getGuildData(ctx.guild, "kickOfflinePlayers", default=True):
+                # Toggle, using default False (allow offline by default)
+                if dataStorage.getGuildData(ctx.guild, "kickOfflinePlayers", default=False):
                     dataStorage.setGuildData(ctx.guild, "kickOfflinePlayers", value=False)
                     await ctx.send(embed=discord.Embed(
                         title=":white_check_mark: Offline players will no longer be kicked!",
@@ -2933,13 +2936,19 @@ async def error(ctx):
 # logging
 logger = logging.getLogger('discord')
 logger.setLevel(logging.INFO)
-handler = logging.FileHandler(filename='log.log', encoding='utf-8', mode='w')
+log_path = os.path.join(os.path.dirname(__file__), 'log.log')
+handler = logging.FileHandler(filename=log_path, encoding='utf-8', mode='w')
 handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
 logger.addHandler(handler)
 
-# get the token from token.txt
-tokenFile = open("token.txt", "r")
-token = tokenFile.read()
-tokenFile.close()
+# get the token securely: prefer environment variable, fallback to token.txt near this file
+token = os.environ.get("DISCORD_TOKEN")
+if not token:
+    try:
+        with open(os.path.join(os.path.dirname(__file__), "token.txt"), "r", encoding="utf-8") as tokenFile:
+            token = tokenFile.read().strip()
+    except FileNotFoundError:
+        raise RuntimeError("Bot token not found. Set DISCORD_TOKEN env var or create token.txt next to bot.py.")
+
 # run token
 client.run(token)
