@@ -7,7 +7,7 @@ This tutorial is split into four parts:
 - Roles: See the full list in [help-roles.md](help-roles.md)
 - Items: A list of all items in the game
  - Items: See the full list in [help-items.md](help-items.md)
-- Commands: A list of all commands you can use during the game
+- Commands: See the full list in [help-commands.md](help-commands.md)
 
 ## Joining a Game
 Use `!join` in the allowed channel to join the next game.
