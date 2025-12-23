@@ -23,8 +23,13 @@ def getTutorialEmbeds(guild) -> dict:
             embed.add_field(name="Joining a game",
                             value=f'To join a game, use the command "{p}join"',
                             inline=False)
+        # Fallback: if rolesTutorialChannel is not configured, avoid referencing .mention
+        if rolesTutorialChannel is not None:
+            roles_ref = rolesTutorialChannel.mention
+        else:
+            roles_ref = f"the roles list (use {p}advancedHelp or see help-roles)"
         embed.add_field(name="Roles",
-                        value=f"Everyone gets a special role assigned, such as murderer, detective, doctor, ect... That role will have special abilities that can only be used at night time. A full list of all roles can be found here: {rolesTutorialChannel.mention}",
+                        value=f"Everyone gets a special role assigned, such as murderer, detective, doctor, etc. That role will have special abilities that can only be used at night time. A full list of all roles can be found here: {roles_ref}",
                         inline=False)
         embed.add_field(name="Day/night cycle",
                         value="In the game there's a day/night cycle that will cycle through every few minutes. During the day and night there are multiple things that can happen:",
