@@ -99,3 +99,14 @@ This bot can either use a json file or MongoDB as a database! By default it uses
 
 Feel free to fork this bot and make improvements! If you create a public fork, please provide credit and let us know - we'd love to see what you build!
 
+
+# Credits
+- Original Creator: **Ikbenmathijs**
+- Current Fork Maintainer: **kriti**
+
+# License
+This project is licensed under the **MIT License**. See [LICENSE](LICENSE) for details.
+
+# Code of Conduct
+We follow a community-friendly code of conduct. Please read and adhere to our [Code of Conduct](CODE_OF_CONDUCT.md).
+
