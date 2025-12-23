@@ -50,6 +50,12 @@ These commands are intended for server admins or moderators. Many require specif
 - `!cleanup` (aliases: `!endGames`, `!stopGames`, `!stopAllGames`, `!endAllGames`): End all running games
 - `!endGame <ID>` (alias: `!stopGame`): End a specific game
 - `!kick <@member>`: Remove a player from their game
+- `!purge <number>` — permission: `admin.purge`
+	- Deletes the last `<number>` messages in the current channel.
+- `!purgeInfoChannels` — permission: `admin.purge`
+	- Cleans up bot info channels created during games.
+- `!giveGold <player> <amount>` — permission: `admin.game.giveGold`
+	- Gives the specified player extra gold during a game.
 
 ## Game Management
 - `!createGame [True|False]`: Create an empty game; `True` enables debug mode
@@ -58,10 +64,19 @@ These commands are intended for server admins or moderators. Many require specif
 - `!skipNight <ID>`: Skip the current night
 - `!setWeather <ID> <int>`: Set weather intensity (game cosmetic)
 - `!setMoon <ID> <int>`: Set moon level (game cosmetic)
+ - `!settings [setting] [value]` — permission: `admin.settings`
+	 - Configure game behavior: minimum/maximum players, timers, toggles, etc.
 
 ## Prefix & Permissions
-- `!prefix <new>`: Change the command prefix for this server (admin permission required)
+ - `!prefix [new]` — permission: `admin.prefix`
+	 - Show the current prefix or set a new one. Members can view the prefix but cannot change it without `admin.prefix`.
 - Permissions are controlled via the bot's internal permission system; see your server configuration and `permissions.py` for details.
+ - `!addPermission <member/role> <permission>` — permission: `admin.permissions.addPermission`
+	 - Adds a permission to a role or member.
+ - `!removePermission <member/role> <permission>` — permission: `admin.permissions.removePermissions`
+	 - Removes a permission from a role or member.
+ - `!permissions [member/role]` — permission: `admin.permissions`
+	 - View permissions for a member/role, or all possible permissions when no argument is provided.
 
 ## Notes
 - These commands only work when the bot has the necessary Discord permissions.
