@@ -34,11 +34,19 @@ notificationMessage = None
 
 initializeDataStorage(localStorage)
 
+# Use only required intents for efficiency
+intents = discord.Intents.default()
+intents.guilds = True
+intents.members = True
+intents.messages = True
+intents.message_content = True  # Requires enabling in Developer Portal
+intents.reactions = True
+
 client = commands.Bot(
     command_prefix=lambda bot, message: [f"<@!{bot.user.id}> ", f"<@{bot.user.id}> ", f"<@{bot.user.id}>",
                                          f"<@!{bot.user.id}> ",
                                          dataStorage.getGuildData(message.guild, "prefix", default="!")],
-    intents=discord.Intents().all(), case_insensitive=True)
+    intents=intents, case_insensitive=True)
 
 # roles that will be in the game no matter what. Do not add more than 4
 requiredRoles = ["murderer", "doctor"]
@@ -60,6 +68,8 @@ class game:
     def __init__(self, guild, debug):
         self.guild = guild
         self.debug = debug
+        # owner (creator) of the lobby
+        self.owner_id = None
 
         # channels & core game info
         self.channels = []
@@ -1431,6 +1441,16 @@ async def buy(ctx, itemId):
 @client.command()
 async def leave(ctx):
     player = getPlayer(ctx.author, ctx.message.guild)
+    # If player not found via allPlayers, try locating them within currentGames
+    if player is None:
+        if ctx.guild.id in currentGames:
+            for g in currentGames[ctx.guild.id]:
+                for p in g.players:
+                    if p.member.id == ctx.author.id:
+                        player = p
+                        break
+                if player is not None:
+                    break
     if player is not None:
         if player.inGame:
             if not player.game.started:
@@ -1456,6 +1476,34 @@ async def leave(ctx):
 
 
 # admin game commands
+@client.command()
+async def resetState(ctx):
+    """Admin-only: Clear in-memory state for this guild (players and lobbies)."""
+    if await permissions.hasPermission(ctx, "admin.resetState"):
+        gid = ctx.guild.id
+        # End games first to clean channels if any
+        if gid in currentGames and len(currentGames[gid]) > 0:
+            await ctx.send(":hourglass: Ending all games before resetting state...")
+            while len(currentGames[gid]) > 0:
+                g = currentGames[gid][0]
+                try:
+                    await g.cleanUp()
+                except Exception:
+                    pass
+        # Clear in-memory indices
+        if gid in allPlayers:
+            allPlayers[gid] = []
+        if gid in availableGames:
+            availableGames[gid] = []
+        if gid in currentGames:
+            currentGames[gid] = []
+        # Clear any cached guild data
+        try:
+            if gid in dataStorage.cache:
+                dataStorage.cache.pop(gid, None)
+        except Exception:
+            pass
+        await ctx.send(":white_check_mark: State reset complete for this guild.")
 
 @client.command()
 async def startGame(ctx, indexStr):
@@ -1467,6 +1515,27 @@ async def startGame(ctx, indexStr):
                 f"Game with index **{indexStr}** should start now if it was in a countdown, or will skip the countdown once it starts counting down!")
         else:
             await ctx.send(":x: There's no game with that ID! use !list to view all games.")
+
+@client.command(aliases=["ownerstart", "fs"]) 
+async def forceStart(ctx):
+    """Allow the lobby owner (or admins) to force start their current lobby."""
+    # Identify player's current game
+    p = getPlayer(ctx.author, ctx.guild)
+    if p is None or not p.inGame:
+        await ctx.send(":x: You need to be in a lobby to force start it.")
+        return
+    g = p.game
+    # Allow if owner or has admin start permission
+    is_owner = getattr(g, "owner_id", None) == ctx.author.id
+    has_admin = await permissions.hasPermission(ctx, "admin.game.startGame")
+    if not (is_owner or has_admin):
+        await ctx.send(":closed_lock_with_key: Only the lobby owner can force start this game.")
+        return
+    if g.started:
+        await ctx.send(":x: The game has already started.")
+        return
+    g.startNow = True
+    await ctx.send(":white_check_mark: The game will start immediately (or skip the countdown if it begins).")
 
 
 @client.command()
@@ -1577,10 +1646,16 @@ def getPlayer(member, guild):
     return None
 
 
-async def createNewGame(guild, debug):
+async def createNewGame(guild, debug, reason: str = "explicit"):
+    # Trace creation source to help diagnose unintended creations
+    try:
+        import inspect
+        caller = inspect.stack()[1].function
+        print(f"[createNewGame] reason={reason} caller={caller} guild={guild.id}")
+    except Exception:
+        pass
     newGame = game(guild, debug)
     await newGame.createGame()
-
     return newGame
 
 
@@ -1764,6 +1839,7 @@ async def showAllRunningGames(ctx):
 
 
 @client.command()
+@commands.cooldown(2, 10, commands.BucketType.user)
 async def join(ctx, indexStr: str = None):
     if await permissions.hasPermission(ctx, "member.join"):
         author = ctx.author
@@ -1785,14 +1861,12 @@ async def join(ctx, indexStr: str = None):
                                                            color=0xff0000))
                         allowedToRunCommandHere = False
                 else:
-                    await ctx.send(embed=discord.Embed(title=":arrow_forward: Joining a game!",
-                                                       description="Joining a specific lobby by ID.",
-                                                       color=0x00b8ff))
+                    # Do not send status message; join requires an explicit lobby ID
+                    pass
             else:
                 if getPlayer(ctx.author, ctx.guild) is None:
-                    await ctx.send(embed=discord.Embed(title=":arrow_forward: Joining a game!",
-                                                       description="Joining a specific lobby by ID.",
-                                                       color=0x00b8ff))
+                    # Do not send status message; join requires an explicit lobby ID
+                    pass
             if allowedToRunCommandHere:
                 # Require an ID argument; do not auto-create lobbies from join
                 if indexStr is None:
@@ -1847,14 +1921,6 @@ async def join(ctx, indexStr: str = None):
                                                                description=f"Use {dataStorage.getGuildData(ctx.guild, 'prefix', default='!')}list to find lobby IDs.",
                                                                color=0xff0000))
 
-                        else:
-                            embed = discord.Embed(title="You can't play if your status is offline!",
-                                                  description="Because you automatically get kicked when your status changes to offline, you can't join a game if your status is offline.\n\nPlease change your status to something else and try again!",
-                                                  color=0xff0000)
-                            if dataStorage.getGuildData(ctx.guild, "useJoinChannel"):
-                                await author.send(embed=embed)
-                            else:
-                                await author.send(embed=embed)
                     else:
                         embed = discord.Embed(title="You can't join a game if you're spectating a game!",
                                               description="Please use !spectate to stop spectating so you can join a game.",
@@ -1938,30 +2004,49 @@ async def endGame(ctx, indexStr=None):
 
 # command for creating a new empty game
 @client.command(aliases=["create"])
+@commands.cooldown(2, 30, commands.BucketType.user)
 async def createGame(ctx, debugStr="False"):
-    # Allow members to create lobbies; admins can use debug flag if needed
-    has_member_create = await permissions.hasPermission(ctx, "member.create")
-    has_debug_create = await permissions.hasPermission(ctx, "debug.createGame")
-    if not (has_member_create or has_debug_create):
+    # Anyone can create a lobby if not currently in one.
+    # Debug flag still requires permission.
+
+    # Disallow creating a lobby while already in one
+    existing_player = getPlayer(ctx.author, ctx.guild)
+    if existing_player is not None and existing_player.inGame:
+        await ctx.send(embed=discord.Embed(title=":x: You're already in a lobby",
+                                           description="Leave your current lobby before creating a new one (use !leave).",
+                                           color=0xff0000))
         return
 
-    if debugStr == "True" and has_debug_create:
-        debug = True
+    if debugStr == "True":
+        has_debug_create = permissions.memberHasPermission(ctx.author, "debug.createGame")
+        if has_debug_create:
+            debug = True
+        else:
+            await ctx.send(":closed_lock_with_key: You need debug permissions to create a debug lobby.")
+            return
     else:
         debug = False
 
-    game = await createNewGame(ctx.message.guild, debug)
+    game = await createNewGame(ctx.message.guild, debug, reason="prefix-create")
+    # Assign owner and add the creator
+    game.owner_id = ctx.author.id
+    # Add the creator to the newly created lobby
+    try:
+        await game.addPlayer(ctx.author)
+    except Exception:
+        pass
     idx = currentGames[ctx.guild.id].index(game)
     if not debug:
         embed = discord.Embed(title="A new lobby has been created!",
-                              description=f"Lobby ID: {idx}. Share this ID for others to join with {dataStorage.getGuildData(ctx.guild, 'prefix', default='!')}join {idx}")
+                              description=f"Lobby ID: {idx}. You've been added to this lobby. Share this ID for others to join with {dataStorage.getGuildData(ctx.guild, 'prefix', default='!')}join {idx}")
     else:
         embed = discord.Embed(title="A new lobby has been created in debugging mode!",
-                              description=f"Lobby ID: {idx}")
+                              description=f"Lobby ID: {idx}. You've been added to this lobby.")
     await ctx.send(embed=embed)
 
 
 @client.command()
+@commands.cooldown(2, 10, commands.BucketType.user)
 async def list(ctx):
     if await permissions.hasPermission(ctx, "member.list"):
         embed = discord.Embed(title="Currently running games",
@@ -1984,6 +2069,7 @@ async def list(ctx):
 
 
 @client.command()
+@commands.cooldown(2, 10, commands.BucketType.user)
 async def spectate(ctx, indexStr=None):
     if await permissions.hasPermission(ctx, "member.spectate"):
         if not isSpectating(ctx.author):
@@ -2683,17 +2769,28 @@ async def on_ready():
 
 
 # Slash commands
+# Guard against accidental double-dispatch by tracking handled interaction IDs
+_handled_interactions = set()
+
+def _mark_handled(interaction: discord.Interaction) -> bool:
+    iid = getattr(interaction, "id", None)
+    if iid is None:
+        return True  # proceed; no id available
+    if iid in _handled_interactions:
+        return False
+    _handled_interactions.add(iid)
+    return True
 @client.tree.command(name="ping", description="Check bot latency")
 async def ping(interaction: discord.Interaction):
-    try:
-        await interaction.response.send_message(f"Pong! {round(client.latency * 1000)} ms", ephemeral=True)
-    except Exception:
-        # Fallback in rare cases when initial response is already used
-        await interaction.followup.send(f"Pong! {round(client.latency * 1000)} ms", ephemeral=True)
+    if not _mark_handled(interaction):
+        return
+    await interaction.response.send_message(f"Pong! {round(client.latency * 1000)} ms", ephemeral=True)
 
 
 @client.tree.command(name="help", description="Show basic bot help")
 async def slash_help(interaction: discord.Interaction):
+    if not _mark_handled(interaction):
+        return
     # Respect existing permission system for help
     try:
         allowed = permissions.memberHasPermission(interaction.user, "member.help")
@@ -2721,13 +2818,98 @@ async def slash_help(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=help_embed, ephemeral=True)
 
-    # If tutorial embeds are configured, send them as follow-ups (also ephemeral)
+    # If tutorial embeds are configured, send only the first as follow-up
     try:
         tutorial_embeds = tutorial.getTutorialEmbeds(interaction.guild).get("commands", [])
-        for e in tutorial_embeds:
-            await interaction.followup.send(embed=e, ephemeral=True)
+        if tutorial_embeds:
+            await interaction.followup.send(embed=tutorial_embeds[0], ephemeral=True)
     except Exception:
         pass
+
+@client.tree.command(name="create", description="Create a new lobby")
+async def slash_create(interaction: discord.Interaction, debug: bool = False):
+    if not _mark_handled(interaction):
+        return
+    has_debug_create = permissions.memberHasPermission(interaction.user, "debug.createGame")
+    # Disallow creating while already in a lobby
+    existing_player = getPlayer(interaction.user, interaction.guild)
+    if existing_player is not None and existing_player.inGame:
+        await interaction.response.send_message(":x: You're already in a lobby. Leave it before creating a new one (use !leave).", ephemeral=True)
+        return
+    # Respect debug flag permission
+    if debug and not has_debug_create:
+        await interaction.response.send_message(":closed_lock_with_key: You need debug permissions to create a debug lobby.", ephemeral=True)
+        return
+    game = await createNewGame(interaction.guild, debug and has_debug_create, reason="slash-create")
+    game.owner_id = interaction.user.id
+    # Add creator to the lobby
+    try:
+        await game.addPlayer(interaction.user)
+    except Exception:
+        pass
+    idx = currentGames[interaction.guild.id].index(game)
+    await interaction.response.send_message(f":white_check_mark: Lobby created! ID: {idx}. You've been added to this lobby. Share this ID for others to join with {dataStorage.getGuildData(interaction.guild, 'prefix', default='!')}join {idx}", ephemeral=True)
+
+@client.tree.command(name="list", description="List current lobbies")
+async def slash_list(interaction: discord.Interaction):
+    if not _mark_handled(interaction):
+        return
+    if not permissions.memberHasPermission(interaction.user, "member.list"):
+        await interaction.response.send_message(":closed_lock_with_key: You don't have permission to list lobbies.", ephemeral=True)
+        return
+    embed = discord.Embed(title="Currently running games",
+                          description=f"Use {dataStorage.getGuildData(interaction.guild, 'prefix', default='!')}join <ID> to join a lobby that hasn't started yet.\nUse spectate <ID> to watch a game.",
+                          color=0x0088ff)
+    if interaction.guild.id not in currentGames:
+        currentGames[interaction.guild.id] = []
+    for game in currentGames[interaction.guild.id]:
+        playerList = "".join([str(p.member.mention) for p in game.players]) or "There are no players in this game"
+        embed.add_field(name=f"ID: {currentGames[interaction.guild.id].index(game)}",
+                        value=f"Started: {game.started}, day {game.day}, players: {playerList}")
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@client.tree.command(name="join", description="Join a lobby by ID")
+async def slash_join(interaction: discord.Interaction, lobby_id: int):
+    if not _mark_handled(interaction):
+        return
+    if not permissions.memberHasPermission(interaction.user, "member.join"):
+        await interaction.response.send_message(":closed_lock_with_key: You don't have permission to join.", ephemeral=True)
+        return
+    # Prevent joining another lobby if already in one
+    existing_player = getPlayer(interaction.user, interaction.guild)
+    if existing_player is not None and existing_player.inGame:
+        await interaction.response.send_message(":x: You're already in a lobby. Leave it before joining another one (use !leave).", ephemeral=True)
+        return
+    guild = interaction.guild
+    if guild.id not in currentGames:
+        currentGames[guild.id] = []
+    if 0 <= lobby_id < len(currentGames[guild.id]):
+        game_to_join = currentGames[guild.id][lobby_id]
+        if game_to_join.started:
+            await interaction.response.send_message(":x: This lobby has already started.", ephemeral=True)
+            return
+        if len(game_to_join.players) >= dataStorage.getGuildData(guild, "maxPlayers", default=30):
+            await interaction.response.send_message(":x: This lobby is full.", ephemeral=True)
+            return
+        await game_to_join.addPlayer(interaction.user)
+        await interaction.response.send_message(f":white_check_mark: Joined lobby {lobby_id}.", ephemeral=True)
+    else:
+        await interaction.response.send_message(":x: Lobby not found.", ephemeral=True)
+
+@client.tree.command(name="spectate", description="Spectate a game by ID")
+async def slash_spectate(interaction: discord.Interaction, lobby_id: int):
+    if not _mark_handled(interaction):
+        return
+    if not permissions.memberHasPermission(interaction.user, "member.spectate"):
+        await interaction.response.send_message(":closed_lock_with_key: You don't have permission to spectate.", ephemeral=True)
+        return
+    if interaction.guild.id not in currentGames:
+        currentGames[interaction.guild.id] = []
+    if 0 <= lobby_id < len(currentGames[interaction.guild.id]):
+        await currentGames[interaction.guild.id][lobby_id].addSpectator(interaction.user)
+        await interaction.response.send_message(f":white_check_mark: Spectating lobby {lobby_id}.", ephemeral=True)
+    else:
+        await interaction.response.send_message(":x: Lobby not found.", ephemeral=True)
 
 
 def getLen(x):

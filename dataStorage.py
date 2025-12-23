@@ -7,6 +7,11 @@ import time
 cache = {}
 printCacheHitsAndMisses = False
 
+# Module-level globals initialized to safe defaults
+localStorage = True
+data = {}
+collection = None
+
 
 BASE_DIR = os.path.dirname(__file__)
 
@@ -78,7 +83,7 @@ def _sqlite_delete_member(guild_id: str, member_id: str, key: str):
 
 
 def initializeDataStorage(local):
-    global localStorage, data, cluser, collection
+    global localStorage, data, collection
     localStorage = local
     # Initialize SQLite disaster-recovery mirror
     _sqlite_init()
@@ -356,16 +361,7 @@ def setGuildData(guild, key, **kwargs):
 
 def getGuildData(guild, key, **kwargs):
     if localStorage:
-        # try finding data in cache before accessing database
-        if guild.id in cache:
-            if key in cache[guild.id]:
-                if printCacheHitsAndMisses:
-                    print("[dataStorage] Cache hit!")
-                return cache[guild.id][key]
-
-        # data not found in cache, so accessing database
-        if printCacheHitsAndMisses:
-            print("[dataStorage] Cache miss :(")
+        # Access local JSON data directly; do not rely on cache when using localStorage
         if f"{guild.id}" not in data:
             data[f"{guild.id}"] = {"members": {}}
 
