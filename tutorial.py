@@ -22,12 +22,12 @@ def getTutorialEmbeds(guild) -> dict:
                       description=f"This tutorial is split in 4 parts: \n{ref_game} is about how the game itself works\n{ref_roles} is a list of all roles in the game\n{ref_items} is for a list of all items in the game\n{ref_commands} is a list of all commands you can use during the game",
                               color=0x00b8ff)
         if dataStorage.getGuildData(guild, "useJoinChannel") and guild.get_channel(dataStorage.getGuildData(guild, "joinChannel")) is not None:
-            embed.add_field(name="Joining a game",
-                            value=f'To join a game type "{p}join" in {guild.get_channel(dataStorage.getGuildData(guild, "joinChannel")).mention}',
+            embed.add_field(name="Create & Join",
+                            value=f'Create a lobby with "{p}create" (or /create) in {guild.get_channel(dataStorage.getGuildData(guild, "joinChannel")).mention}. Others can join using "{p}join <ID>" (or /join <ID>). Use "{p}list" to find lobby IDs.',
                             inline=False)
         else:
-            embed.add_field(name="Joining a game",
-                            value=f'To join a game, use the command "{p}join"',
+            embed.add_field(name="Create & Join",
+                            value=f'Create a lobby with "{p}create" (or /create). Others can join using "{p}join <ID>" (or /join <ID>). Use "{p}list" to find lobby IDs.',
                             inline=False)
         # Fallback: if rolesTutorialChannel is not configured, avoid referencing .mention
         if rolesTutorialChannel is not None:
@@ -154,18 +154,21 @@ def getTutorialEmbeds(guild) -> dict:
         embed = discord.Embed(title="Other commands",
                               description="Below is a list of commands usable outside of a game", color=0x00b8ff)
         if dataStorage.getGuildData(guild, "useJoinChannel") and guild.get_channel(dataStorage.getGuildData(guild, "joinChannel")) is not None:
-            embed.add_field(name=f"{p}join",
-                            value=f"""Will join a game if one is available or create a new game. Please use this command in {guild.get_channel(dataStorage.getGuildData(guild, "joinChannel")).mention}""",
+            embed.add_field(name=f"{p}create",
+                            value=f'Create a new lobby (or /create). Use this in {guild.get_channel(dataStorage.getGuildData(guild, "joinChannel")).mention} if configured.',
                             inline=False)
         else:
-            embed.add_field(name=f"{p}join",
-                            value=f"Will join a game if one is available or create a new game.",
+            embed.add_field(name=f"{p}create",
+                            value="Create a new lobby (or /create).",
                             inline=False)
+        embed.add_field(name=f"{p}join <ID>",
+                        value=f"Join an existing lobby by ID (or /join <ID>). Use {p}list to find IDs.",
+                        inline=False)
         embed.add_field(name=f"{p}list",
                         value="Shows you all running games with their IDs. Useful for when you need a game ID to spectate a game.",
                         inline=False)
-        embed.add_field(name=f"{p}spectate <game ID>",
-                        value="Spectate a game with the specified game ID. To stop spectating, use !spectate again.",
+        embed.add_field(name=f"{p}spectate <ID>",
+                        value="Spectate a game by ID (or /spectate <ID>). To stop spectating, use !spectate again.",
                         inline=False)
         embed.add_field(name=f"{p}stats <user>",
                         value="Shows you the stats of someone, like how many games they played and how many times they won.",
@@ -179,12 +182,12 @@ def getTutorialEmbeds(guild) -> dict:
         embed = discord.Embed(title="Tutorial", color=0x00b8ff)
         if dataStorage.getGuildData(guild, "useJoinChannel") and guild.get_channel(
                 dataStorage.getGuildData(guild, "joinChannel")) is not None:
-            embed.add_field(name="Joining a game",
-                            value=f'To join a game type f"{p}join" in {guild.get_channel(dataStorage.getGuildData(guild, "joinChannel")).mention}',
+            embed.add_field(name="Create & Join",
+                            value=f'Create a lobby with "{p}create" (or /create) in {guild.get_channel(dataStorage.getGuildData(guild, "joinChannel")).mention}. Others can join using "{p}join <ID>" (or /join <ID>). Use "{p}list" to find lobby IDs.',
                             inline=False)
         else:
-            embed.add_field(name="Joining a game",
-                            value=f'To join a game, use the command f"{p}join"',
+            embed.add_field(name="Create & Join",
+                            value=f'Create a lobby with "{p}create" (or /create). Others can join using "{p}join <ID>" (or /join <ID>). Use "{p}list" to find lobby IDs.',
                             inline=False)
         embed.add_field(name="Roles",
                 value=f"Everyone gets a special role assigned, such as murderer, detective, doctor, etc. That role will have special abilities that can only be used at night time. A full list of all roles can be found here: {ref_roles}",
@@ -302,18 +305,21 @@ def getTutorialEmbeds(guild) -> dict:
                               description="Below is a list of commands usable outside of a game", color=0x00b8ff)
         if dataStorage.getGuildData(guild, "useJoinChannel") and guild.get_channel(
                 dataStorage.getGuildData(guild, "joinChannel")) is not None:
-            embed.add_field(name=f"{p}join",
-                            value=f"""Will join a game if one is available or create a new game. Please use this command in {guild.get_channel(dataStorage.getGuildData(guild, "joinChannel")).mention}""",
+            embed.add_field(name=f"{p}create",
+                            value=f'Create a new lobby (or /create). Use this in {guild.get_channel(dataStorage.getGuildData(guild, "joinChannel")).mention} if configured.',
                             inline=False)
         else:
-            embed.add_field(name=f"{p}join",
-                            value=f"Will join a game if one is available or create a new game.",
+            embed.add_field(name=f"{p}create",
+                            value="Create a new lobby (or /create).",
                             inline=False)
+        embed.add_field(name=f"{p}join <ID>",
+                        value=f"Join an existing lobby by ID (or /join <ID>). Use {p}list to find IDs.",
+                        inline=False)
         embed.add_field(name=f"{p}list",
                         value="Shows you all running games with their IDs. Useful for when you need a game ID to spectate a game.",
                         inline=False)
-        embed.add_field(name=f"{p}spectate <game ID>",
-                        value="Spectate a game with the specified game ID. To stop spectating, use !spectate again.",
+        embed.add_field(name=f"{p}spectate <ID>",
+                        value="Spectate a game by ID (or /spectate <ID>). To stop spectating, use !spectate again.",
                         inline=False)
         embed.add_field(name=f"{p}stats <user>",
                         value="Shows you the stats of someone, like how many games they played and how many times they won.",

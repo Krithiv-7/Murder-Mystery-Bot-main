@@ -31,13 +31,16 @@ This guide lists the main commands you can use during a game and outside of a ga
 
 ## Other Commands (Outside of a Game)
 
-### `!join`
-- Joins an available game or creates a new one if none are available.
+### `!create`
+- Creates a new lobby and auto-adds you to it. Anyone can create a lobby if they aren’t already in one.
+
+### `!join <ID>`
+- Joins the lobby with the given ID. Use `!list` to find IDs. You must provide an ID; lobbies are not auto-created by `!join`.
 
 ### `!list`
 - Shows all running games with their IDs. Useful when you need a game ID to spectate.
 
-### `!spectate <game ID>`
+### `!spectate <ID>`
 - Spectate a game with the specified ID. To stop spectating, use `!spectate` again.
 
 ### `!stats <user>`
@@ -52,3 +55,5 @@ This guide lists the main commands you can use during a game and outside of a ga
 ---
 
 For the full advanced/admin command set, see [help-advanced.md](help-advanced.md). For roles and items, see [help-roles.md](help-roles.md) and [help-items.md](help-items.md).
+
+Slash command equivalents: `/create`, `/list`, `/join <ID>`, `/spectate <ID>`, `/help`, `/ping`.

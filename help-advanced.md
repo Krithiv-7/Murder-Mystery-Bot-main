@@ -24,11 +24,14 @@ These commands are intended for server admins or moderators. Many require specif
 - `!advancedHelp [category]` — permission: `member.help`
 	- Views a list of all commands. Optionally filter by category.
 
-- `!join` — permission: `member.join`
-	- Joins a game. Depending on server configuration, this command may only be usable in the join channel.
+- `!create` — permission: none
+	- Creates a new lobby and auto-adds you (only if you are not already in a lobby). Debug mode requires `debug.createGame`.
 
-- `!spectate [id]` — permission: `member.spectate`
-	- Spectates a game. If only one game is running, no ID is required.
+- `!join <id>` — permission: `member.join`
+	- Joins a lobby by ID. This command requires an explicit lobby ID and does not create new lobbies.
+
+- `!spectate <id>` — permission: `member.spectate`
+	- Spectates a game by ID.
 
 - `!list` — permission: `member.list`
 	- Shows all currently running games and their IDs.
@@ -49,6 +52,8 @@ These commands are intended for server admins or moderators. Many require specif
 - `!setup`: Interactive server setup (creates join channel and configures defaults)
 - `!cleanup` (aliases: `!endGames`, `!stopGames`, `!stopAllGames`, `!endAllGames`): End all running games
 - `!endGame <ID>` (alias: `!stopGame`): End a specific game
+- `!resetState` — permission: `admin.resetState`
+	- Ends all games for this guild and clears in-memory state (players, lobbies, caches). Useful to recover from stuck state.
 - `!kick <@member>`: Remove a player from their game
 - `!purge <number>` — permission: `admin.purge`
 	- Deletes the last `<number>` messages in the current channel.
@@ -58,8 +63,9 @@ These commands are intended for server admins or moderators. Many require specif
 	- Gives the specified player extra gold during a game.
 
 ## Game Management
-- `!createGame [True|False]`: Create an empty game; `True` enables debug mode
+- `!createGame [True|False]`: Create an empty game; `True` enables debug mode (debug permission required)
 - `!startGame <ID>`: Force a game to start (skips countdown if applicable)
+- `!forceStart` (aliases: `!ownerstart`, `!fs`): Lobby owner (or admins) can force start their current lobby immediately
 - `!skipVotes <ID>`: Skip or cut short voting time
 - `!skipNight <ID>`: Skip the current night
 - `!setWeather <ID> <int>`: Set weather intensity (game cosmetic)
@@ -81,6 +87,7 @@ These commands are intended for server admins or moderators. Many require specif
 ## Notes
 - These commands only work when the bot has the necessary Discord permissions.
 - Using admin commands while playing is discouraged (administrator visibility can break game secrecy).
+- Members can only be in one lobby at a time; creating or joining another lobby requires leaving the current one.
 
 ## Debug (Advanced Help)
 Arguments in <> are required; [] are optional.

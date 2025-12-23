@@ -1127,6 +1127,23 @@ class game:
 
     # delete all channels, categories, roles, ect... from the current game
     async def cleanUp(self):
+        # Ensure members lose game roles before deleting roles
+        try:
+            if self.role is not None or self.spectatorRole is not None:
+                for m in list(self.guild.members):
+                    roles_to_remove = []
+                    try:
+                        if self.role is not None and self.role in m.roles:
+                            roles_to_remove.append(self.role)
+                        if self.spectatorRole is not None and self.spectatorRole in m.roles:
+                            roles_to_remove.append(self.spectatorRole)
+                        if roles_to_remove:
+                            await m.remove_roles(*roles_to_remove, reason="Murder Mystery cleanup")
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
         for player in self.players:
             player.inGame = False
             if not self.guild.id in allPlayers:
@@ -1134,13 +1151,15 @@ class game:
             if player in allPlayers[self.guild.id]:
                 allPlayers[self.guild.id].remove(player)
         try:
-            await self.role.delete()
-        except:
+            if self.role is not None:
+                await self.role.delete(reason="Murder Mystery cleanup")
+        except Exception:
             pass
 
         try:
-            await self.spectatorRole.delete()
-        except:
+            if self.spectatorRole is not None:
+                await self.spectatorRole.delete(reason="Murder Mystery cleanup")
+        except Exception:
             pass
 
         for channel in self.channels:
@@ -1996,7 +2015,7 @@ async def endGame(ctx, indexStr=None):
         else:
             if len(currentGames[ctx.guild.id]) > index:
                 await ctx.send(f":hourglass: Ending game with ID {index}, please wait...")
-                await currentGames[ctx.guild.id][index].cleanup()
+                await currentGames[ctx.guild.id][index].cleanUp()
                 await ctx.send(f":white_check_mark: Game with ID {index} has been ended!")
             else:
                 await ctx.send(f":x: There's no game with that index!")

@@ -5,12 +5,14 @@ This is a game of murder mystery inside Discord. Every player receives a role, a
 This tutorial is split into four parts:
 - Game: How the game itself works
 - Roles: See the full list in [help-roles.md](help-roles.md)
-- Items: A list of all items in the game
- - Items: See the full list in [help-items.md](help-items.md)
+- Items: See the full list in [help-items.md](help-items.md)
 - Commands: See the full list in [help-commands.md](help-commands.md)
 
 ## Joining a Game
-Use `!join` in the allowed channel to join the next game.
+- Create a lobby with `!create` (or `/create`). You’ll be added automatically.
+- Share the lobby ID with others. They can join using `!join <ID>` (or `/join <ID>`). Use `!list` (or `/list`) to find IDs.
+- You can only be in one lobby at a time. Use `!leave` before creating or joining another lobby.
+ - Lobby owners can force start their lobby with `!forceStart` (`!ownerstart`/`!fs`).
 
 ## Roles
 Everyone gets a special role assigned, such as murderer, detective, doctor, etc. That role will have special abilities that can only be used at night time.
@@ -36,7 +38,8 @@ Nighttime does not follow a fixed order; actions happen based on what players do
 - Other Events: Outcomes depend on roles, items used, and player actions.
 
 ## Basic Commands
-- `!join` — Join a game
+- `!create` — Create a new lobby and join it
+- `!join <ID>` — Join a lobby by ID
 - `!list` — Show running games and IDs
 - `!spectate <ID>` — Spectate a running game
 - `!leave` — Leave your current game
@@ -46,6 +49,7 @@ Nighttime does not follow a fixed order; actions happen based on what players do
 - `!buy <itemId>` — Buy an item from the shop
 - `!use <itemId> [arg]` — Use an item (some require a target)
 - `!balance` (aliases: `!money`, `!gold`, `!bal`) — Show your gold
+ - Slash equivalents: `/create`, `/list`, `/join <ID>`, `/spectate <ID>`
 
 ## Advanced Docs
 - Advanced/Admin Commands: [help-advanced.md](help-advanced.md)
