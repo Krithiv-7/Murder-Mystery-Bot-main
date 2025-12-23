@@ -4,6 +4,17 @@ Last updated: December 23, 2025
 
 These commands are intended for server admins or moderators. Many require specific permissions as enforced by the bot.
 
+## Game (Advanced Help)
+- Arguments in <> are required; [] are optional.
+- These commands have no extra permission settings because they are only usable in-game, which itself requires the `member.join` permission.
+
+- `!vote <player>`: Vote on the specified player to be executed during the game.
+- `!shop`: View all shop items (night only).
+- `!buy <item>`: Buy an item from the shop (night only).
+- `!use <item> [argument]`: Use an item; whether an argument is required depends on the item.
+- `!whisper <player>`: Create a private channel between you and the specified player (day only).
+- `!leave`: Leave the game.
+
 ## Admin & Moderation
 - `!setup`: Interactive server setup (creates join channel and configures defaults)
 - `!cleanup` (aliases: `!endGames`, `!stopGames`, `!stopAllGames`, `!endAllGames`): End all running games
