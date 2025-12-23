@@ -34,13 +34,32 @@ if [ ! -f "token.txt" ]; then
     read -p "Press enter to continue..."
 fi
 
-echo "Installing dependencies..."
-python3 -m pip install --upgrade pip
-pip3 install discord.py pymongo dnspython
+echo "Creating virtual environment (venv)..."
+if [ ! -d ".venv" ]; then
+    python3 -m venv .venv
+    if [ $? -ne 0 ]; then
+        echo ""
+        echo "ERROR: Failed to create venv. On Debian/Ubuntu, install venv support:"
+        echo "  sudo apt update && sudo apt install -y python3-venv"
+        echo "Then re-run: ./setup.sh"
+        exit 1
+    fi
+fi
+
+echo "Activating venv and installing dependencies..."
+source .venv/bin/activate
+python -m pip install --upgrade pip
+if [ -f "requirements.txt" ]; then
+    pip install -r requirements.txt
+else
+    pip install discord.py pymongo dnspython
+fi
 
 if [ $? -ne 0 ]; then
     echo ""
     echo "ERROR: Failed to install dependencies!"
+    echo "If you saw an externally-managed-environment (PEP 668) error, ensure you are inside the venv above."
+    deactivate 2>/dev/null
     exit 1
 fi
 
@@ -53,7 +72,7 @@ echo "Setup completed successfully!"
 echo "================================"
 echo ""
 echo "To start the bot, run: ./start.sh"
-echo "Or manually run: python3 bot.py"
+echo "Or manually run inside venv: source .venv/bin/activate && python bot.py"
 echo ""
 echo "For production (keeps running in background):"
 echo "  screen -S discord-bot ./start.sh"

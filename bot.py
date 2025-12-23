@@ -27,6 +27,9 @@ allPlayers = {}
 localStorage = True  # If this setting is True, json will be used instead of mongoDB for storage.
 testingBot = True  # Makes the bot not try to intergate with the main server. Leave it on unless you know what you're doing
 
+# initialize optional globals to avoid NameError in events
+notificationMessage = None
+
 
 
 initializeDataStorage(localStorage)
@@ -2730,7 +2733,8 @@ async def on_raw_reaction_add(payload):
             if member.id == dataStorage.getGuildData(guild, "setupMember"):
                 await setup.processSetupReaction(member, channel, payload.emoji)
 
-        if message == notificationMessage:
+        # Only handle notification reactions if the notification message is known
+        if notificationMessage is not None and message.id == getattr(notificationMessage, "id", None):
             # NOTE: in some editors these might appear like normal numbers, but these are actually emojis.
             if payload.emoji.name == "1️⃣":
                 await member.add_roles(botUpdatesRole)
@@ -2749,7 +2753,7 @@ async def on_raw_reaction_remove(payload):
         member = await guild.fetch_member(payload.user_id)
         channel = await client.fetch_channel(payload.channel_id)
         message = await channel.fetch_message(payload.message_id)
-        if message == notificationMessage:
+        if notificationMessage is not None and message.id == getattr(notificationMessage, "id", None):
             # NOTE: in some editors these might appear like normal numbers, but these are actually emojis.
             if payload.emoji.name == "1️⃣":
                 await member.remove_roles(botUpdatesRole)
