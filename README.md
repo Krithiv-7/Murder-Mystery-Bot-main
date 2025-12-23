@@ -12,7 +12,34 @@ If you need help, join our Discord server: https://discord.gg/kriti
 - Python 3.7 or higher (Python 3.13+ recommended)
 - pip (Python package manager)
 
-## Setup Instructions
+## Quick Setup (Recommended)
+
+### Windows
+1. Create your Discord bot and get the token (see below)
+2. Paste your bot token into `token.txt`
+3. Double-click `setup.bat` to install dependencies
+4. Double-click `start.bat` to start the bot
+
+### Linux/macOS
+1. Create your Discord bot and get the token (see below)
+2. Paste your bot token into `token.txt`
+3. Run setup script:
+   ```bash
+   chmod +x setup.sh start.sh
+   ./setup.sh
+   ```
+4. Start the bot:
+   ```bash
+   ./start.sh
+   ```
+5. For production (keeps running in background):
+   ```bash
+   screen -S discord-bot ./start.sh
+   # Press Ctrl+A then D to detach from screen
+   # To reattach: screen -r discord-bot
+   ```
+
+## Manual Setup Instructions
 
 1. **Install Python** from https://www.python.org/
    - On Windows, make sure to check "Add python to PATH" during installation
