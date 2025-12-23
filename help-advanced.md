@@ -82,4 +82,38 @@ These commands are intended for server admins or moderators. Many require specif
 - These commands only work when the bot has the necessary Discord permissions.
 - Using admin commands while playing is discouraged (administrator visibility can break game secrecy).
 
+## Debug (Advanced Help)
+Arguments in <> are required; [] are optional.
+
+These advanced commands were primarily built for debugging and may be confusing without reading the source code.
+
+⚠️ Some of these commands can break the bot if used incorrectly.
+
+- `!createGame [True/False]` — permission: `debug.createGame`
+	- Creates an empty game. Use `True` to enable debugging mode.
+
+- `!addObjectiveProgress <member> <task> <value>` — permission: `debug.objectives.addObjectiveProgress`
+	- Adds progress to an objective task.
+
+- `!giveObjective <member> <index>` — permission: `debug.objectives.giveObjective`
+	- Sets the member's objective to the specified index. ⚠️ Unexpected behaviour may occur if the index is invalid.
+
+- `!completeCurrentObjective <member>` — permission: `debug.objectives.completeCurrentObjective`
+	- Completes the member's current objective.
+
+- `!skipObjectiveTimer <member>` — permission: `debug.objectives.skipObjectiveTimer`
+	- Skips the in‑between objective timer for the specified member.
+
+- `!setMoon <game ID> <brightness (1-5)>` — permission: `debug.game.setMoon`
+	- Sets moon brightness in the specified game. 1 = no moon, 5 = full moon. Use after the weather forecast and before night starts.
+
+- `!setWeather <game ID> <intensity (0-99)>` — permission: `debug.game.setWeather`
+	- Sets weather intensity (0 = not intense, 99 = very intense). Use after the weather forecast and before night starts.
+
+- `!skipNight <game ID>` — permission: `debug.game.skipNight`
+	- Skips the night.
+
+- `!skipVotes <game ID>` — permission: `debug.game.skipVotes`
+	- Skips voting time.
+
 See also: [Basics](help.md), [Server Settings](help-settings.md), [Terms](tos.md), [Privacy](pp.md), [Code of Conduct](CODE_OF_CONDUCT.md).
