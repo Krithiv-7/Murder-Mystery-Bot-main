@@ -1,8 +1,8 @@
-# Murder‑Mystery‑Bot — Help Guide
+# Murder‑Mystery‑Bot — Help (Basics)
 
 Last updated: December 23, 2025
 
-This bot runs a murder‑mystery style game inside Discord using message‑based commands (no slash commands). Enable the Message Content Intent in the Discord Developer Portal for your bot.
+This guide covers the core commands most players will use. The bot runs via message‑based commands (no slash commands). Enable the Message Content Intent in the Discord Developer Portal for your bot.
 
 ## Getting Started
 - Install and run: See [README.md](README.md) for setup instructions.
@@ -14,7 +14,7 @@ This bot runs a murder‑mystery style game inside Discord using message‑based
 2. Use `!join` in the allowed channel to join the next game.
 3. When enough players join, the game starts automatically after a short countdown.
 
-## Player Commands
+## Basic Player Commands
 - `!join [ -overwriteAdminWarning ]`: Join an available game. Admins are warned to play without admin perms for fairness.
 - `!list`: Show running games and IDs.
 - `!spectate <ID>`: Spectate a running game.
@@ -26,24 +26,13 @@ This bot runs a murder‑mystery style game inside Discord using message‑based
 - `!use <itemId> [arg]`: Use an item (some need a target).
 - `!balance` (aliases: `!money`, `!gold`, `!bal`): Show your gold.
 
-## Admin & Mod Commands
-- `!setup`: Interactive server setup (join channel, defaults).
-- `!cleanup` (aliases: `!endGames`, `!stopGames`, etc.): End all running games.
-- `!endGame <ID>` (alias: `!stopGame`): End a specific game.
-- `!createGame [True|False]`: Create a new game (optional debug mode).
-- `!startGame <ID>`: Force a game with ID to start.
-- `!skipVotes <ID>`: Skip or cut short voting in a game.
-- `!skipNight <ID>`: Skip night in a game.
-- `!setWeather <ID> <int>`: Set weather intensity.
-- `!setMoon <ID> <int>`: Set moon level.
-- `!kick <@member>`: Remove a player from their game.
+## Advanced Docs
+- Advanced/Admin Commands: [help-advanced.md](help-advanced.md)
+- Server Settings Reference: [help-settings.md](help-settings.md)
 
-## Server Settings
-- `!settings`: Show and change server settings.
-  - Numeric settings: `minPlayers`, `maxPlayers`, `preGameTimer`, `votingTime`, `nightTimeTimer`.
-  - Toggles: `voiceChannel`, `lockVoiceChannelDuringNight`, `kickOfflinePlayers`.
-- `!prefix <newPrefix>`: Set command prefix (admin permission required).
-- Permissions are managed via the built‑in permissions system (`permissions.py`).
+## Notes
+- Admins can change the prefix with `!prefix <new>`.
+- If a dedicated join channel is enabled, only `!join` is allowed there; other messages may be deleted.
 
 ## Tips
 - Games cycle between day and night; items are mostly used at night.
