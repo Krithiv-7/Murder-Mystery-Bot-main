@@ -1089,7 +1089,7 @@ class game:
                 if not dataStorage.getPlayerData(plr.member, "promotionalMessageSent", default=False):
                     dataStorage.setPlayerData(plr.member, "promotionalMessageSent", value=True)
                     embed = discord.Embed(title="Thank you for playing Murder Mystery!",
-                                          description="If you liked the game, I would highly appreciate if you joined the discord server! There you can also play the game with other people as well as suggest new features, report bugs, and more!\n\nAlso, give the bot a review on top.gg: https://top.gg/bot/590980247801954304\n\nThanks for playing!\n-Murder Mystery's developer",
+                                          description="If you liked the game, I would highly appreciate if you joined the discord server! There you can also play the game with other people as well as suggest new features, report bugs, and more!\n\nAlso, give the bot a review on top.gg: https://top.gg/bot/1452886075621249024\n\nThanks for playing!\n-Murder Mystery's developer",
                                           color=0x00b8ff)
                     embed.set_thumbnail(
                         url="https://cdn.discordapp.com/attachments/554234775590666251/863864464688676884/blue-heart_1f499.png")
