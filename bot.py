@@ -125,13 +125,23 @@ class game:
             if joiningChannel is not None:
                 await joiningChannel.set_permissions(self.role, read_messages=False)
 
-        # create category
+        # create category and force it to the top (position 0)
         self.category = await self.guild.create_category("game")
+        # move to top immediately, then set permissions
+        try:
+            await self.category.edit(position=0)
+        except Exception:
+            pass
         await self.category.set_permissions(self.guild.me, send_messages=True, read_messages=True)
         await self.category.set_permissions(self.role, read_messages=True, send_messages=True)
         await self.category.set_permissions(self.guild.default_role, read_messages=False)
         await self.category.set_permissions(self.spectatorRole, read_messages=False, send_messages=False)
-        await self.category.edit(position=0)
+        # some guilds reorder categories asynchronously; ensure final position at top
+        try:
+            await asyncio.sleep(0.5)
+            await self.category.edit(position=0)
+        except Exception:
+            pass
 
         # create main game channel
         self.mainChannel = await self.category.create_text_channel("Game")
