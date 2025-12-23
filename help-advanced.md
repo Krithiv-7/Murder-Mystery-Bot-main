@@ -15,6 +15,36 @@ These commands are intended for server admins or moderators. Many require specif
 - `!whisper <player>`: Create a private channel between you and the specified player (day only).
 - `!leave`: Leave the game.
 
+## Member (Advanced Help)
+- Arguments in <> are required; [] are optional.
+
+- `!help` — permission: `member.help`
+	- Views a list of all simple commands.
+
+- `!advancedHelp [category]` — permission: `member.help`
+	- Views a list of all commands. Optionally filter by category.
+
+- `!join` — permission: `member.join`
+	- Joins a game. Depending on server configuration, this command may only be usable in the join channel.
+
+- `!spectate [id]` — permission: `member.spectate`
+	- Spectates a game. If only one game is running, no ID is required.
+
+- `!list` — permission: `member.list`
+	- Shows all currently running games and their IDs.
+
+- `!level [player]` — permission: `member.levels.level`
+	- Shows the player's level.
+
+- `!objective` — permission: `member.levels.objective`
+	- Shows your current objective progress or gives you a new one.
+
+- `!stats [player]` — permission: `member.levels.stats`
+	- Shows your or the specified player's stats.
+
+- `!prefix` — permission: none required
+	- Shows the bot's prefix for this server.
+
 ## Admin & Moderation
 - `!setup`: Interactive server setup (creates join channel and configures defaults)
 - `!cleanup` (aliases: `!endGames`, `!stopGames`, `!stopAllGames`, `!endAllGames`): End all running games
