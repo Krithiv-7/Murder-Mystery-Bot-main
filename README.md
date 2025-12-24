@@ -98,6 +98,10 @@ This bot can either use a json file or MongoDB as a database! By default it uses
 - Server Members Intent  
 - Message Content Intent
 
+⚠️ **Admin join warning:** Discord administrators can see hidden channels. To join a lobby with admin permissions, run `!join <ID> -overwriteAdminWarning`.
+
+🔒 **Starting lobbies:** `!startGame <ID>` can only be used by the lobby owner or an admin. `!forceStart` (`!ownerstart` / `!fs`) remains an owner/admin shortcut for the active lobby.
+
 💡 **For production deployment**, consider using:
 - `screen` or `tmux` on Linux to keep the bot running
 - PM2 for process management

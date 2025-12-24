@@ -82,9 +82,14 @@ from core.config import localStorage, roles, requiredRoles
 ```python
 from commands import setup_cogs
 
-# In on_ready or after client creation:
-await setup_cogs(client)
+# Loaded in client.setup_hook to keep bot.py slim:
+@client.event
+async def setup_hook():
+   await setup_cogs(client)
 ```
+
+### Legacy inline commands
+`bot.py` now removes legacy inline commands at startup to avoid duplicates with the cog-based commands. Keep defining commands in `commands/` going forward.
 
 ## Notes
 
@@ -104,9 +109,12 @@ To fully migrate to the modular structure:
 
 2. Load cogs instead of defining commands inline:
    ```python
-   # In on_ready:
+   # In setup_hook:
    from commands import setup_cogs
-   await setup_cogs(client)
+
+   @client.event
+   async def setup_hook():
+       await setup_cogs(client)
    ```
 
 3. Move remaining commands to appropriate cog files

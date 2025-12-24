@@ -1,6 +1,6 @@
 # Murder‑Mystery‑Bot — Advanced/Admin Commands
 
-Last updated: December 23, 2025
+Last updated: December 24, 2025
 
 These commands are intended for server admins or moderators. Many require specific permissions as enforced by the bot.
 
@@ -29,6 +29,7 @@ These commands are intended for server admins or moderators. Many require specif
 
 - `!join <id>` — permission: `member.join`
 	- Joins a lobby by ID. This command requires an explicit lobby ID and does not create new lobbies.
+	- If you have the Discord Administrator permission, add `-overwriteAdminWarning` to join (for example: `!join 0 -overwriteAdminWarning`).
 
 - `!spectate <id>` — permission: `member.spectate`
 	- Spectates a game by ID.
@@ -64,7 +65,7 @@ These commands are intended for server admins or moderators. Many require specif
 
 ## Game Management
 - `!createGame [True|False]`: Create an empty game; `True` enables debug mode (debug permission required)
-- `!startGame <ID>`: Force a game to start (skips countdown if applicable)
+- `!startGame <ID>`: Force a game to start (skips countdown if applicable). Only the lobby owner or admins can run this.
 - `!forceStart` (aliases: `!ownerstart`, `!fs`): Lobby owner (or admins) can force start their current lobby immediately
 - `!skipVotes <ID>`: Skip or cut short voting time
 - `!skipNight <ID>`: Skip the current night

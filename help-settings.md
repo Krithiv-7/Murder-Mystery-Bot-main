@@ -1,6 +1,6 @@
 # Murder‑Mystery‑Bot — Server Settings Reference
 
-Last updated: December 23, 2025
+Last updated: December 24, 2025
 
 The `!settings` command lets admins view and change server‑level configuration used by the game.
 

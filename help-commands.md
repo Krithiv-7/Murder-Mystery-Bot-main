@@ -1,6 +1,6 @@
 # Murder‑Mystery‑Bot — Commands Guide
 
-Last updated: December 23, 2025
+Last updated: December 24, 2025
 
 This guide lists the main commands you can use during a game and outside of a game.
 
@@ -36,6 +36,7 @@ This guide lists the main commands you can use during a game and outside of a ga
 
 ### `!join <ID>`
 - Joins the lobby with the given ID. Use `!list` to find IDs. You must provide an ID; lobbies are not auto-created by `!join`.
+- If you have the Discord Administrator permission, include `-overwriteAdminWarning` to join (e.g., `!join 0 -overwriteAdminWarning`).
 
 ### `!list`
 - Shows all running games with their IDs. Useful when you need a game ID to spectate.

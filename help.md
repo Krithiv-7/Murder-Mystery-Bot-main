@@ -11,6 +11,7 @@ This tutorial is split into four parts:
 ## Joining a Game
 - Create a lobby with `!create` (or `/create`). You’ll be added automatically.
 - Share the lobby ID with others. They can join using `!join <ID>` (or `/join <ID>`). Use `!list` (or `/list`) to find IDs.
+- If you have the Discord Administrator permission, include `-overwriteAdminWarning` when joining a lobby (for example: `!join 0 -overwriteAdminWarning`).
 - You can only be in one lobby at a time. Use `!leave` before creating or joining another lobby.
  - Lobby owners can force start their lobby with `!forceStart` (`!ownerstart`/`!fs`).
 
