@@ -1,7 +1,6 @@
 # library imports
 import asyncio
 import discord
-from discord import app_commands
 import os
 from discord.ext import commands
 from discord.utils import get
@@ -9,27 +8,28 @@ import random
 import datetime
 import logging
 import traceback as tb
+
 # script imports
 import items
 import tutorial
 from roles import role
 import dataStorage
-from dataStorage import getPlayerData, setPlayerData, deletePlayerData, initializeDataStorage
+from dataStorage import (
+    getPlayerData, setPlayerData, deletePlayerData, initializeDataStorage
+)
 import objectives
 import permissions
 import setup
 
-currentGames = {}
-availableGames = {}
-allPlayers = {}
-
-# bot settings
-localStorage = True  # If this setting is True, json will be used instead of mongoDB for storage.
-testingBot = True  # Makes the bot not try to intergate with the main server. Leave it on unless you know what you're doing
+# Import shared state from core modules
+from core.game_state import currentGames, availableGames, allPlayers
+from core.config import (
+    localStorage, testingBot, requiredRoles, roles,
+    mainServerInvite, shortMainServerInvite, noPermissionEmbed
+)
 
 # initialize optional globals to avoid NameError in events
 notificationMessage = None
-
 
 
 initializeDataStorage(localStorage)
@@ -42,28 +42,28 @@ intents.messages = True
 intents.message_content = True  # Requires enabling in Developer Portal
 intents.reactions = True
 
+def get_prefix(bot, message):
+    """Get command prefix for the bot."""
+    return [
+        f"<@!{bot.user.id}> ",
+        f"<@{bot.user.id}> ",
+        f"<@{bot.user.id}>",
+        f"<@!{bot.user.id}> ",
+        dataStorage.getGuildData(message.guild, "prefix", default="!")
+    ]
+
+
 client = commands.Bot(
-    command_prefix=lambda bot, message: [f"<@!{bot.user.id}> ", f"<@{bot.user.id}> ", f"<@{bot.user.id}>",
-                                         f"<@!{bot.user.id}> ",
-                                         dataStorage.getGuildData(message.guild, "prefix", default="!")],
-    intents=intents, case_insensitive=True)
+    command_prefix=get_prefix,
+    intents=intents,
+    case_insensitive=True
+)
 
-# roles that will be in the game no matter what. Do not add more than 4
-requiredRoles = ["murderer", "doctor"]
-# possible roles. The numbers mean how many players there have to be for that role to appear.
-roles = {"detective": 4, "banker": 4, "thief": 4, "jailer": 5, "broadcaster": 6, "fool": 6, "hunter": 6, "werewolf": 7,
-         "cupid": 8}
-
-# other settings
-mainServerInvite = "https://discord.gg/kriti"
-shortMainServerInvite = "discord.gg/kriti"
-# this no permission embed is no longer used in most commands, only old commands that only work in the main guild anyways
-noPermissionEmbed = discord.Embed(title="You don't have permission to do that!",
-                                  description="You don't have permission to use that command here.", color=0xff0000)
+# Note: requiredRoles, roles, mainServerInvite, etc.
+# are now imported from core.config
 
 
 # code
-
 class game:
     def __init__(self, guild, debug):
         self.guild = guild
@@ -106,34 +106,48 @@ class game:
     async def createGame(self):
         # create role
         if self.guild != mainGuild:
-            gameRolePosition = self.guild.self_role.position - 1
+            gameRolePosition = self.guild.me.top_role.position - 1
         else:
             gameRolePosition = mainGameRolePosition
         self.role = await self.guild.create_role()
-        await self.role.edit(name="Waiting for game to start",
-                             permissions=discord.Permissions(read_message_history=True, read_messages=True), hoist=True)
-        # "temp" fix cuz I can't be bothered fixing this issue right now
+        await self.role.edit(
+            name="Waiting for game to start",
+            permissions=discord.Permissions(
+                read_message_history=True,
+                read_messages=True
+            ),
+            hoist=True
+        )
+        # Edit role position (may fail if bot lacks permissions)
         try:
             await self.role.edit(position=gameRolePosition)
-        except:
+        except discord.HTTPException:
             pass
 
         self.spectatorRole = await self.guild.create_role()
         if self.guild != mainGuild:
-            gameRolePosition = self.guild.self_role.position - 1
+            gameRolePosition = self.guild.me.top_role.position - 1
         else:
             gameRolePosition = mainGameRolePosition - 1
-        await self.spectatorRole.edit(name="Spectator",
-                                      permissions=discord.Permissions(read_message_history=True, read_messages=True),
-                                      hoist=True)
+        await self.spectatorRole.edit(
+            name="Spectator",
+            permissions=discord.Permissions(
+                read_message_history=True,
+                read_messages=True
+            ),
+            hoist=True
+        )
         try:
             await self.spectatorRole.edit(position=gameRolePosition)
-        except:
+        except discord.HTTPException:
             pass
         if dataStorage.getGuildData(self.guild, "useJoinChannel"):
-            joiningChannel = self.guild.get_channel(dataStorage.getGuildData(self.guild, "joinChannel"))
+            join_ch_id = dataStorage.getGuildData(self.guild, "joinChannel")
+            joiningChannel = self.guild.get_channel(join_ch_id)
             if joiningChannel is not None:
-                await joiningChannel.set_permissions(self.role, read_messages=False)
+                await joiningChannel.set_permissions(
+                    self.role, read_messages=False
+                )
 
         # create category and force it to the top (position 0)
         self.category = await self.guild.create_category("game")
@@ -142,11 +156,20 @@ class game:
             await self.category.edit(position=0)
         except Exception:
             pass
-        await self.category.set_permissions(self.guild.me, send_messages=True, read_messages=True)
-        await self.category.set_permissions(self.role, read_messages=True, send_messages=True)
-        await self.category.set_permissions(self.guild.default_role, read_messages=False)
-        await self.category.set_permissions(self.spectatorRole, read_messages=False, send_messages=False)
-        # some guilds reorder categories asynchronously; ensure final position at top
+        await self.category.set_permissions(
+            self.guild.me, send_messages=True, read_messages=True
+        )
+        await self.category.set_permissions(
+            self.role, read_messages=True, send_messages=True
+        )
+        await self.category.set_permissions(
+            self.guild.default_role, read_messages=False
+        )
+        await self.category.set_permissions(
+            self.spectatorRole, read_messages=False, send_messages=False
+        )
+        # some guilds reorder categories asynchronously
+        # ensure final position at top
         try:
             await asyncio.sleep(0.5)
             await self.category.edit(position=0)
@@ -155,33 +178,53 @@ class game:
 
         # create main game channel
         self.mainChannel = await self.category.create_text_channel("Game")
-        await self.mainChannel.set_permissions(self.spectatorRole, read_messages=True, send_messages=False)
+        await self.mainChannel.set_permissions(
+            self.spectatorRole, read_messages=True, send_messages=False
+        )
         self.channels.append(self.mainChannel)
 
         self.voiceChannel = None
-        if dataStorage.getGuildData(self.guild, "gameVoiceChannel", default=False):
-            self.voiceChannel = await self.category.create_voice_channel("Game")
-            await self.voiceChannel.set_permissions(self.guild.default_role, view_channel=False)
-            await self.voiceChannel.set_permissions(self.role, view_channel=True)
+        use_voice = dataStorage.getGuildData(
+            self.guild, "gameVoiceChannel", default=False
+        )
+        if use_voice:
+            self.voiceChannel = await self.category.create_voice_channel(
+                "Game"
+            )
+            await self.voiceChannel.set_permissions(
+                self.guild.default_role, view_channel=False
+            )
+            await self.voiceChannel.set_permissions(
+                self.role, view_channel=True
+            )
             self.channels.append(self.voiceChannel)
 
-
         # add self to the running games list
-        if not self.guild.id in currentGames:
+        if self.guild.id not in currentGames:
             currentGames[self.guild.id] = []
         currentGames[self.guild.id].append(self)
         # add self to list of games that can be joined
-        if not self.guild.id in availableGames:
+        if self.guild.id not in availableGames:
             availableGames[self.guild.id] = []
         availableGames[self.guild.id].append(self)
 
         if self.guild == mainGuild:
             if not self.debug:
-                await notificationChannel.send(f"{newGamesRole.mention}",
-                                               embed=discord.Embed(title="A new game has just been created!",
-                                                                   description=f"Someone just started a new game. You can join it by using !join in {joiningChannel.mention}",
-                                                                   color=0x00b8ff))
-        print(f"New game created in guild {self.guild.id} with {self.guild.member_count} members!")
+                embed = discord.Embed(
+                    title="A new game has just been created!",
+                    description=(
+                        f"Someone just started a new game. "
+                        f"Join using !join in {joiningChannel.mention}"
+                    ),
+                    color=0x00b8ff
+                )
+                await notificationChannel.send(
+                    f"{newGamesRole.mention}", embed=embed
+                )
+        print(
+            f"New game created in guild {self.guild.id} "
+            f"with {self.guild.member_count} members!"
+        )
 
     # add player
     async def addPlayer(self, member):
@@ -190,40 +233,60 @@ class game:
         # add the instance to the list of players in this game
         self.players.append(newPlayer)
         # add the player to a list of all players playing a game
-        if not self.guild.id in allPlayers:
+        if self.guild.id not in allPlayers:
             allPlayers[self.guild.id] = []
         allPlayers[self.guild.id].append(newPlayer)
         # give the member the role
         await member.add_roles(self.role)
 
         # check if there are enough players to start the game
-        if len(self.players) >= dataStorage.getGuildData(self.guild, "minPlayers", default=4):
-            embed = discord.Embed(title=f":heavy_plus_sign: **{newPlayer.member.display_name} joined the game!**",
-                                  description=f"The game will start soon!", color=0x0088ff)
-            await self.mainChannel.send(f"{newPlayer.member.mention}", embed=embed)
+        min_players = dataStorage.getGuildData(
+            self.guild, "minPlayers", default=4
+        )
+        if len(self.players) >= min_players:
+            title = (
+                f":heavy_plus_sign: "
+                f"**{newPlayer.member.display_name} joined the game!**"
+            )
+            embed = discord.Embed(
+                title=title,
+                description="The game will start soon!",
+                color=0x0088ff
+            )
+            await self.mainChannel.send(
+                f"{newPlayer.member.mention}", embed=embed
+            )
             # start the countdown for the game to start
             await self.startCountdown()
 
         else:
-            if dataStorage.getGuildData(self.guild, "minPlayers", default=4) - len(self.players) == 1:
-                await self.mainChannel.send(f"{newPlayer.member.mention}", embed=discord.Embed(
-                    title=f":heavy_plus_sign: **{newPlayer.member.display_name} joined the game!**",
-                    description=f"{dataStorage.getGuildData(self.guild, 'minPlayers', default=4) - len(self.players)} more player is required for the game to start.",
-                    color=0x0088ff))
-
+            needed = min_players - len(self.players)
+            title = (
+                f":heavy_plus_sign: "
+                f"**{newPlayer.member.display_name} joined the game!**"
+            )
+            if needed == 1:
+                desc = f"{needed} more player is required to start."
             else:
-                await self.mainChannel.send(f"{newPlayer.member.mention}", embed=discord.Embed(
-                    title=f":heavy_plus_sign: **{newPlayer.member.display_name} joined the game!**",
-                    description=f"{dataStorage.getGuildData(self.guild, 'minPlayers', default=4) - len(self.players)} more players are required for the game to start.",
-                    color=0x0088ff))
+                desc = f"{needed} more players are required to start."
+            embed = discord.Embed(
+                title=title,
+                description=desc,
+                color=0x0088ff
+            )
+            await self.mainChannel.send(
+                f"{newPlayer.member.mention}", embed=embed
+            )
 
     async def addSpectator(self, member):
         self.spectators.append(member)
         await member.add_roles(self.spectatorRole)
-        await self.mainChannel.send(f"{member.mention}",
-                                    embed=discord.Embed(title=f"{member.display_name} is now spectating",
-                                                        description="They can now view this channel, but not talk in it.",
-                                                        color=0x0088ff))
+        embed = discord.Embed(
+            title=f"{member.display_name} is now spectating",
+            description="They can now view this channel, but not talk in it.",
+            color=0x0088ff
+        )
+        await self.mainChannel.send(f"{member.mention}", embed=embed)
 
     async def removeSpectator(self, member):
         if member in self.spectators:
@@ -272,25 +335,50 @@ class game:
                 if shouldDie:
                     if type(item).__name__ == "ring":
                         shouldDie = False
-                        await self.mainChannel.send(embed=discord.Embed(
-                            title=f"{player.member.display_name} almost died, but their {item.name} saved them!",
-                            description="It now disappeared from their inventory.", color=0x00ff00))
+                        title = (
+                            f"{player.member.display_name} almost died, "
+                            f"but their {item.name} saved them!"
+                        )
+                        embed = discord.Embed(
+                            title=title,
+                            description=(
+                                "It now disappeared from their inventory."
+                            ),
+                            color=0x00ff00
+                        )
+                        await self.mainChannel.send(embed=embed)
                         await items.removeFromInventory(item, player)
 
                     elif type(item).__name__ == "shield":
                         if random.randint(0, 1) == 1:
                             shouldDie = False
-                            await self.mainChannel.send(embed=discord.Embed(
-                                title=f"{player.member.display_name} almost died, but their {item.name} saved them!",
-                                description="It now disappeared from their inventory.", color=0x00ff00))
+                            title = (
+                                f"{player.member.display_name} almost died, "
+                                f"but their {item.name} saved them!"
+                            )
+                            desc_text = "It now disappeared from their inventory."
+                            embed = discord.Embed(
+                                title=title,
+                                description=desc_text,
+                                color=0x00ff00
+                            )
+                            await self.mainChannel.send(embed=embed)
                             await items.removeFromInventory(item, player)
 
                     elif type(item).__name__ == "potato":
                         if random.randint(1, 10) == 1:
                             shouldDie = False
-                            await self.mainChannel.send(embed=discord.Embed(
-                                title=f"{player.member.display_name} almost died, but their {item.name} saved them!",
-                                description="It now disappeared from their inventory.", color=0x00ff00))
+                            title = (
+                                f"{player.member.display_name} almost died, "
+                                f"but their {item.name} saved them!"
+                            )
+                            desc_text = "It now disappeared from their inventory."
+                            embed = discord.Embed(
+                                title=title,
+                                description=desc_text,
+                                color=0x00ff00
+                            )
+                            await self.mainChannel.send(embed=embed)
                             await items.removeFromInventory(item, player)
 
         if shouldDie:
@@ -301,16 +389,32 @@ class game:
             await self.mainChannel.send(embed=mainEmbed)
             try:
                 await player.member.send(embed=DMEmbed)
-            except:
+            except discord.HTTPException:
                 pass
             if player.inLove:
                 if not player.lover.dyingNow:
                     player.dyingNow = True
-                    await self.killPlayer(player.lover, discord.Embed(
-                        title=f":skull: {player.lover.member.display_name} died because their lover died",
-                        description=f"{player.lover.member.display_name}{player.lover.role.deadString}",
-                        color=0xff0000), discord.Embed(title=":skull: You died because your lover died",
-                                                       color=0xff0000))
+                    lover_name = player.lover.member.display_name
+                    main_title = (
+                        f":skull: {lover_name} died because "
+                        "their lover died"
+                    )
+                    main_desc = (
+                        f"{lover_name}"
+                        f"{player.lover.role.deadString}"
+                    )
+                    main_embed = discord.Embed(
+                        title=main_title,
+                        description=main_desc,
+                        color=0xff0000
+                    )
+                    dm_embed = discord.Embed(
+                        title=":skull: You died because your lover died",
+                        color=0xff0000
+                    )
+                    await self.killPlayer(
+                        player.lover, main_embed, dm_embed
+                    )
 
             player.dyingNow = False
             await self.removePlayer(player)
@@ -322,21 +426,38 @@ class game:
         if not self.countDown:
             countDownCanceled = False
             self.countDown = True
-            countDown = dataStorage.getGuildData(self.guild, "preGameTimer", default=120)
+            countDown = dataStorage.getGuildData(
+                self.guild, "preGameTimer", default=120
+            )
 
             if self.guild == mainGuild:
                 if not self.debug:
-                    await notificationChannel.send(f"{gamesStartingRole.mention}",
-                                                   embed=discord.Embed(title="A new game is about to start!",
-                                                                       description=f"A new game is about to start in {countDown} seconds. Join it using !join in {joiningChannel.mention}",
-                                                                       color=0x00b8ff))
+                    desc = (
+                        f"A new game is about to start in {countDown} "
+                        f"seconds. Join it using !join in "
+                        f"{joiningChannel.mention}"
+                    )
+                    embed = discord.Embed(
+                        title="A new game is about to start!",
+                        description=desc,
+                        color=0x00b8ff
+                    )
+                    await notificationChannel.send(
+                        f"{gamesStartingRole.mention}", embed=embed
+                    )
             # start countdown loop
             while countDown > 0:
                 nums = [120, 90, 60, 30, 10, 5]
                 if countDown in nums:
-                    embed = discord.Embed(title=f"The game will start in {countDown} seconds",
-                                          description=f"The game will start in {countDown} seconds to allow for more players to join.",
-                                          color=0x0088ff)
+                    desc = (
+                        f"The game will start in {countDown} seconds "
+                        "to allow for more players to join."
+                    )
+                    embed = discord.Embed(
+                        title=f"The game will start in {countDown} seconds",
+                        description=desc,
+                        color=0x0088ff
+                    )
                     await self.mainChannel.send(embed=embed)
 
                 # wait one second
@@ -345,12 +466,22 @@ class game:
                 # subtract 1 from the countdown
                 countDown = countDown - 1
 
-                if len(self.players) < dataStorage.getGuildData(self.guild, 'minPlayers', default=4):
+                min_players = dataStorage.getGuildData(
+                    self.guild, 'minPlayers', default=4
+                )
+                if len(self.players) < min_players:
                     self.countDown = False
                     countDownCanceled = True
-                    await self.mainChannel.send(embed=discord.Embed(title="Countdown canceled because someone left",
-                                                                    description="The countdown got canceled because someone left and there are no longer enough players to start the game",
-                                                                    color=0xff0000))
+                    embed = discord.Embed(
+                        title="Countdown canceled because someone left",
+                        description=(
+                            "The countdown got canceled because someone "
+                            "left and there are no longer enough players "
+                            "to start the game"
+                        ),
+                        color=0xff0000
+                    )
+                    await self.mainChannel.send(embed=embed)
                     break
 
                 if self.startNow:
@@ -366,26 +497,40 @@ class game:
                 await self.initializeGame()
 
     async def initializeGame(self):
-        # shuffle players list so you can't tell as the broadcaster who is what role by looking at in what order people joined and in what order the roles are listed
+        # shuffle players list so you can't tell as the broadcaster
+        # who is what role by looking at the order people joined
+        # and the order the roles are listed
         random.shuffle(self.players)
         self.started = True
         self.day = 0
-        await self.role.edit(permissions=discord.Permissions(read_message_history=True, read_messages=False))
+        await self.role.edit(
+            permissions=discord.Permissions(
+                read_message_history=True, read_messages=False
+            )
+        )
         for channel in self.guild.channels:
             if self.voiceChannel is not None:
-                if channel != self.mainChannel and channel.id != self.voiceChannel.id:
+                is_not_main = channel != self.mainChannel
+                is_not_voice = channel.id != self.voiceChannel.id
+                if is_not_main and is_not_voice:
                     try:
-                        await channel.set_permissions(self.role, read_messages=False)
-                    except:
+                        await channel.set_permissions(
+                            self.role, read_messages=False
+                        )
+                    except discord.HTTPException:
                         pass
             else:
                 if channel != self.mainChannel:
                     try:
-                        await channel.set_permissions(self.role, read_messages=False)
-                    except:
+                        await channel.set_permissions(
+                            self.role, read_messages=False
+                        )
+                    except discord.HTTPException:
                         pass
 
-        await self.mainChannel.set_permissions(self.role, read_messages=True, send_messages=True)
+        await self.mainChannel.set_permissions(
+            self.role, read_messages=True, send_messages=True
+        )
 
         await self.mainChannel.edit(name="Day time")
 
@@ -437,25 +582,58 @@ class game:
         await self.firstDay()
 
     async def firstDay(self):
-        embed = discord.Embed(title="Welcome to murder mystery!",
-                              description="There is a murderer here! In order to win the game, you must find who the murderer is and kill them. If you are the murderer, you need to kill everyone in order to win.",
-                              color=0x0088ff)
-        embed.add_field(name="Day time",
-                        value="At day time everyone can vote to execute someone. You can vote using !vote <person>",
-                        inline=False)
-        embed.add_field(name="Night time",
-                        value="At night time you can use the shop to buy new items. Use !shop and !buy at night time. Bought items can be used during day time with !use <item>",
-                        inline=False)
-        embed.add_field(name="Special roles",
-                        value="Some people have special roles and will be able to use that role's ability at night time. There will be a separate channel at night time for your role.",
-                        inline=False)
-        embed.add_field(name="Good luck!", value="Your role will be revealed to you at night. Good luck and have fun!")
+        embed = discord.Embed(
+            title="Welcome to murder mystery!",
+            description=(
+                "There is a murderer here! In order to win the game, "
+                "you must find who the murderer is and kill them. If "
+                "you are the murderer, you need to kill everyone in "
+                "order to win."
+            ),
+            color=0x0088ff
+        )
+        embed.add_field(
+            name="Day time",
+            value=(
+                "At day time everyone can vote to execute someone. "
+                "You can vote using !vote <person>"
+            ),
+            inline=False
+        )
+        embed.add_field(
+            name="Night time",
+            value=(
+                "At night time you can use the shop to buy new items. "
+                "Use !shop and !buy at night time. Bought items can be "
+                "used during day time with !use <item>"
+            ),
+            inline=False
+        )
+        embed.add_field(
+            name="Special roles",
+            value=(
+                "Some people have special roles and will be able to "
+                "use that role's ability at night time. There will be "
+                "a separate channel at night time for your role."
+            ),
+            inline=False
+        )
+        embed.add_field(
+            name="Good luck!",
+            value="Your role will be revealed to you at night. Good luck!"
+        )
         await self.mainChannel.send(f"{self.role.mention}", embed=embed)
         if not self.debug:
             await asyncio.sleep(15)
-        await self.mainChannel.send(embed=discord.Embed(title=":sunny: Day 0",
-                                                        description="Night will approach soon! Your role will be revealed at night time",
-                                                        color=0xfff100))
+        embed = discord.Embed(
+            title=":sunny: Day 0",
+            description=(
+                "Night will approach soon! Your role will be "
+                "revealed at night time"
+            ),
+            color=0xfff100
+        )
+        await self.mainChannel.send(embed=embed)
         if not self.debug:
             await asyncio.sleep(10)
 
@@ -470,7 +648,7 @@ class game:
             channel = await client.fetch_channel(self.channelsRemoveByNight[0])
             try:
                 await channel.delete()
-            except:
+            except discord.HTTPException:
                 pass
             if channel in self.channels:
                 self.channels.remove(channel)
@@ -478,17 +656,21 @@ class game:
             self.channelsRemoveByNight.remove(self.channelsRemoveByNight[0])
 
         if self.voiceChannel is not None:
-            if dataStorage.getGuildData(self.guild, "lockVoiceChannelDuringNight", default=False):
-                await self.voiceChannel.set_permissions(self.role, view_channel=False)
+            lock_voice = dataStorage.getGuildData(
+                self.guild, "lockVoiceChannelDuringNight", default=False
+            )
+            if lock_voice:
+                await self.voiceChannel.set_permissions(
+                    self.role, view_channel=False
+                )
                 for member in self.voiceChannel.members:
                     try:
                         await member.move_to(None)
-                    except:
+                    except discord.HTTPException:
                         pass
 
         jailer = None
         emoji = ""
-
         for player in self.players:
             player.satelliteUsed = False
             player.role.abilityUsed = False
@@ -502,13 +684,25 @@ class game:
                 emoji = ":last_quarter_moon:"
             elif self.moon == 4:
                 emoji = ":waning_gibbous_moon:"
-            elif self.moon == 5:
                 emoji = ":full_moon:"
-            embed = discord.Embed(title=f"{emoji} Night time",
-                                  description="It's now night time. You can't talk to other people in night time, but you can use !shop to use the shop during night time.")
+            embed = discord.Embed(
+                title=f"{emoji} Night time",
+                description=(
+                    "It's now night time. You can't talk to other "
+                    "people in night time, but you can use !shop "
+                    "to use the shop during night time."
+                )
+            )
             if self.day == 0:
-                embed.add_field(name="First night:",
-                                value="Your role will be revealed below. Some roles have special channels that can be used during night time, if that's the case the specific role's channel will be accessible during night time.")
+                embed.add_field(
+                    name="First night:",
+                    value=(
+                        "Your role will be revealed below. Some roles "
+                        "have special channels that can be used during "
+                        "night time, if that's the case the specific "
+                        "role's channel will be accessible."
+                    )
+                )
             await player.nightChannel.send(embed=embed)
 
             if self.day == 0:
@@ -518,22 +712,50 @@ class game:
             if self.findRole("werewolf") is not None:
                 werewolf = self.findRole("werewolf")
                 murderer = self.findRole("murderer")
-                await murderer.nightChannel.send(embed=discord.Embed(
-                    title=f":wolf: {werewolf.member.display_name} is the werewolf, and you're a team with them.",
-                    description="The werewolf has to kill someone when it becomes full moon. You're teaming up with them to kill everyone else.\n**Do no try to kill them, they're your teammate.**",
-                    color=0xffda83))
-                await werewolf.nightChannel.send(embed=discord.Embed(
-                    title=f":dagger: {murderer.member.display_name} is the murderer, and you're a team with them.",
-                    description="You will team up with the murderer to kill everyone else. If the murderer dies, you automatically lose too.\n**Do not try to kill them, they're your teammate.**",
-                    color=0xa80700))
+                werewolf_name = werewolf.member.display_name
+                murderer_name = murderer.member.display_name
+                embed1 = discord.Embed(
+                    title=(
+                        f":wolf: {werewolf_name} is the werewolf, "
+                        "and you're a team with them."
+                    ),
+                    description=(
+                        "The werewolf has to kill someone when it "
+                        "becomes full moon. You're teaming up with them "
+                        "to kill everyone else.\n"
+                        "**Do not try to kill them, they're your teammate.**"
+                    ),
+                    color=0xffda83
+                )
+                await murderer.nightChannel.send(embed=embed1)
+                embed2 = discord.Embed(
+                    title=(
+                        f":dagger: {murderer_name} is the murderer, "
+                        "and you're a team with them."
+                    ),
+                    description=(
+                        "You will team up with the murderer to kill "
+                        "everyone else. If the murderer dies, you "
+                        "automatically lose too.\n"
+                        "**Do not try to kill them, they're your teammate.**"
+                    ),
+                    color=0xa80700
+                )
+                await werewolf.nightChannel.send(embed=embed2)
 
         for player in self.players:
 
             if random.randint(1, 10) == 1:
                 player.gold += 2
-                await player.nightChannel.send(embed=discord.Embed(title="You found :coin: 2 gold",
-                                                                   description="You found :coin: 2 gold lying on the floor. Lucky you!",
-                                                                   color=0x00ff00))
+                embed = discord.Embed(
+                    title="You found :coin: 2 gold",
+                    description=(
+                        "You found :coin: 2 gold lying on the floor. "
+                        "Lucky you!"
+                    ),
+                    color=0x00ff00
+                )
+                await player.nightChannel.send(embed=embed)
 
             if self.weatherIntensity > 60 and self.weatherIntensity <= 80:
                 num = random.randint(1, 10)
@@ -549,15 +771,22 @@ class game:
 
                 if goldNum != 0:
                     player.gold += goldNum
-                    await player.nightChannel.send(
-                        embed=discord.Embed(title=f":dash: The wind blew :coin: {goldNum} gold to you!",
-                                            description="Lucky you!", color=0x00ff00))
+                    embed = discord.Embed(
+                        title=f":dash: The wind blew :coin: {goldNum} gold!",
+                        description="Lucky you!",
+                        color=0x00ff00
+                    )
+                    await player.nightChannel.send(embed=embed)
 
             if hasattr(player, "roleChannel"):
                 if not hasattr(player.role, "unlockRoleChannelAtNightTime"):
-                    await player.roleChannel.set_permissions(player.member, read_messages=True, send_messages=True)
+                    await player.roleChannel.set_permissions(
+                        player.member, read_messages=True, send_messages=True
+                    )
                 else:
-                    await player.roleChannel.set_permissions(player.member, read_messages=True, send_messages=False)
+                    await player.roleChannel.set_permissions(
+                        player.member, read_messages=True, send_messages=False
+                    )
 
                 await player.role.sendRoleChannelEmbed()
 
@@ -576,59 +805,95 @@ class game:
                 if jailer.role.jailedNext is not None:
                     if jailer.role.jailedNext in self.players:
                         jailer.role.jailedNext.inJail = True
-                        jailer.role.jailChannel = await self.category.create_text_channel("Jail")
+                        jail_ch = await self.category.create_text_channel(
+                            "Jail"
+                        )
+                        jailer.role.jailChannel = jail_ch
                         self.channels.append(jailer.role.jailChannel)
-                        self.channelsRemoveByMorning.append(jailer.role.jailChannel)
+                        self.channelsRemoveByMorning.append(
+                            jailer.role.jailChannel
+                        )
+                        jailed = jailer.role.jailedNext
 
-                        await jailer.role.jailChannel.set_permissions(self.role, read_messages=False,
-                                                                      send_messages=False)
-                        await jailer.role.jailChannel.set_permissions(jailer.role.jailedNext.member, read_messages=True,
-                                                                      send_messages=False)
-                        await jailer.role.jailedNext.nightChannel.set_permissions(jailer.role.jailedNext.member,
-                                                                                  read_messages=True,
-                                                                                  send_messages=False)
-                        if hasattr(jailer.role.jailedNext, "roleChannel"):
-                            await jailer.role.jailedNext.roleChannel.set_permissions(jailer.role.jailedNext.member,
-                                                                                     read_messages=True,
-                                                                                     send_messages=False)
+                        await jailer.role.jailChannel.set_permissions(
+                            self.role,
+                            read_messages=False,
+                            send_messages=False
+                        )
+                        await jailer.role.jailChannel.set_permissions(
+                            jailed.member,
+                            read_messages=True,
+                            send_messages=False
+                        )
+                        await jailed.nightChannel.set_permissions(
+                            jailed.member,
+                            read_messages=True,
+                            send_messages=False
+                        )
+                        if hasattr(jailed, "roleChannel"):
+                            await jailed.roleChannel.set_permissions(
+                                jailed.member,
+                                read_messages=True,
+                                send_messages=False
+                            )
 
+                        embed = discord.Embed(
+                            title="You are now in jail",
+                            description=(
+                                "While in jail, you can't use the shop "
+                                "or your role's ability."
+                            ),
+                            color=0x4a4a4a
+                        )
                         await jailer.role.jailChannel.send(
-                            f"{jailer.role.jailedNext.member.mention}",
-                            embed=discord.Embed(
-                                title=f"You are now in jail",
-                                description=f"While in jail, you can't use the shop or your role's ability.",
-                                color=0x4a4a4a))
+                            f"{jailed.member.mention}", embed=embed
+                        )
 
                         await jailer.role.jailChannel.edit(position=0)
 
                         jailer.role.jailedNext = None
 
         if self.weatherIntensity > 95:
-            await self.sendToAllNightChannels(
-                embed=discord.Embed(title=":warning: :cloud_tornado: Tornado warning! :warning:",
-                                    description="There will soon be a tornado. If you don't a :house: house, there's a 30% chance that you will die next morning.\nYou can buy a :house: house from !shop",
-                                    color=0xff0000))
+            embed = discord.Embed(
+                title=":warning: :cloud_tornado: Tornado warning! :warning:",
+                description=(
+                    "There will soon be a tornado. If you don't have a "
+                    ":house: house, there's a 30% chance that you will "
+                    "die next morning.\n"
+                    "You can buy a :house: house from !shop"
+                ),
+                color=0xff0000
+            )
+            await self.sendToAllNightChannels(embed=embed)
 
-        count = dataStorage.getGuildData(self.guild, "nightTimeTimer", default=60)
+        count = dataStorage.getGuildData(
+            self.guild, "nightTimeTimer", default=60
+        )
         while count >= 0:
             if self.skipNight:
                 self.skipNight = False
                 break
             if count == 30:
                 for player in self.players:
-                    await player.nightChannel.send(
-                        embed=discord.Embed(title=":first_quarter_moon: The sun is about to rise!",
-                                            description="The sun will rise in 30 seconds."))
+                    embed = discord.Embed(
+                        title=":first_quarter_moon: The sun is about to rise!",
+                        description="The sun will rise in 30 seconds."
+                    )
+                    await player.nightChannel.send(embed=embed)
             elif count == 15:
                 for player in self.players:
-                    await player.nightChannel.send(
-                        embed=discord.Embed(title=":waxing_crescent_moon: The sun is about to rise!",
-                                            description="The sun will rise in 15 seconds."))
+                    embed = discord.Embed(
+                        title=":waxing_crescent_moon: The sun is about to rise!",
+                        description="The sun will rise in 15 seconds."
+                    )
+                    await player.nightChannel.send(embed=embed)
             elif count == 10:
                 for player in self.players:
-                    await player.nightChannel.send(
-                        embed=discord.Embed(title=":sunrise_over_mountains: The sun is about to rise!",
-                                            description="The sun will rise in 5 seconds."))
+                    embed = discord.Embed(
+                        title=":sunrise_over_mountains: The sun is about to rise!",
+                        description="The sun will rise in 5 seconds."
+                    )
+                    await player.nightChannel.send(embed=embed)
 
             await asyncio.sleep(1)
             count -= 1
@@ -639,18 +904,32 @@ class game:
         self.nightTime = False
         self.day = self.day + 1
 
-        await self.mainChannel.set_permissions(self.role, send_messages=True, read_messages=True)
+        await self.mainChannel.set_permissions(
+            self.role, send_messages=True, read_messages=True
+        )
         if self.voiceChannel is not None:
-            if dataStorage.getGuildData(self.guild, "lockVoiceChannelDuringNight", default=False):
-                await self.voiceChannel.set_permissions(self.role, view_channel=True)
+            lock_voice = dataStorage.getGuildData(
+                self.guild, "lockVoiceChannelDuringNight", default=False
+            )
+            if lock_voice:
+                await self.voiceChannel.set_permissions(
+                    self.role, view_channel=True
+                )
 
-        await self.mainChannel.send(embed=discord.Embed(title=f":sunny: Day {self.day}",
-                                                        description="The sun is rising, good morning everyone!",
-                                                        color=0xfff100))
+        embed = discord.Embed(
+            title=f":sunny: Day {self.day}",
+            description="The sun is rising, good morning everyone!",
+            color=0xfff100
+        )
+        await self.mainChannel.send(embed=embed)
         for player in self.players:
-            await player.nightChannel.set_permissions(player.member, read_messages=False, send_messages=False)
+            await player.nightChannel.set_permissions(
+                player.member, read_messages=False, send_messages=False
+            )
             if hasattr(player, "roleChannel"):
-                await player.roleChannel.set_permissions(player.member, read_messages=False, send_messages=False)
+                await player.roleChannel.set_permissions(
+                    player.member, read_messages=False, send_messages=False
+                )
 
         for channel in self.channelsRemoveByMorning:
             self.channelsRemoveByMorning.remove(channel)
@@ -658,34 +937,52 @@ class game:
                 self.channels.remove(channel)
             try:
                 await channel.delete()
-            except:
+            except discord.HTTPException:
                 pass
 
         # kill random person if the werewolf didn't kill someone during full moon
         if self.findRole("werewolf") is not None:
             if self.moon == 5:
                 if not self.findRole("werewolf").role.killedSomeone:
-                    playersList = self.getPlayersListExcluding([self.findRole("werewolf"), self.findRole("murderer")])
+                    werewolf = self.findRole("werewolf")
+                    murderer = self.findRole("murderer")
+                    exclude = [werewolf, murderer]
+                    playersList = self.getPlayersListExcluding(exclude)
                     random.shuffle(playersList)
-                    self.willDieNextMorning.append(
-                        {"player": playersList[0], "title": " got killed",
-                         "DM": ":skull: You got killed by the werewolf!"})
+                    self.willDieNextMorning.append({
+                        "player": playersList[0],
+                        "title": " got killed",
+                        "DM": ":skull: You got killed by the werewolf!"
+                    })
 
         # kill everyone that should die this morning
         for deathData in self.willDieNextMorning:
             plr = deathData["player"]
             if plr in self.players:
                 embedTitle = deathData["title"]
-                if await self.killPlayer(deathData["player"],
-                                         discord.Embed(title=f":skull: {plr.member.display_name} {embedTitle}",
-                                                       description=f"{plr.member.display_name}{plr.role.deadString}",
-                                                       color=0xff000d), discord.Embed(title=deathData["DM"],
-                                                                                      description=f"You almost made it to day {self.day}",
-                                                                                      color=0xff000d)):
+                main_embed = discord.Embed(
+                    title=f":skull: {plr.member.display_name} {embedTitle}",
+                    description=(
+                        f"{plr.member.display_name}{plr.role.deadString}"
+                    ),
+                    color=0xff000d
+                )
+                dm_embed = discord.Embed(
+                    title=deathData["DM"],
+                    description=f"You almost made it to day {self.day}",
+                    color=0xff000d
+                )
+                if await self.killPlayer(
+                    deathData["player"], main_embed, dm_embed
+                ):
                     if "deathCause" in deathData:
-                        if deathData["deathCause"] == "itemUsedOnPlayer":
+                        cause = deathData["deathCause"]
+                        if cause == "itemUsedOnPlayer":
                             if "killer" in deathData:
-                                objectives.addObjectiveProgress(deathData["killer"].member, "killMurdererWithItem", 1)
+                                objectives.addObjectiveProgress(
+                                    deathData["killer"].member,
+                                    "killMurdererWithItem", 1
+                                )
 
                 self.willDieNextMorning.remove(deathData)
             else:
@@ -702,31 +999,63 @@ class game:
                 if random.randint(0, 10) <= 3:
                     if hasHouse:
                         await items.removeFromInventory(house, player)
-                        await self.mainChannel.send(embed=discord.Embed(
-                            title=f":house_abandoned: :cloud_tornado: {player.member.display_name}'s house got destroyed by the tornado",
-                            description="But they survived themselves!", color=0xff0000))
+                        name = player.member.display_name
+                        embed = discord.Embed(
+                            title=(
+                                f":house_abandoned: :cloud_tornado: "
+                                f"{name}'s house got destroyed by tornado"
+                            ),
+                            description="But they survived themselves!",
+                            color=0xff0000
+                        )
+                        await self.mainChannel.send(embed=embed)
                     else:
-                        await self.killPlayer(player, discord.Embed(
-                            title=f":skull: :cloud_tornado: {player.member.display_name} died in the tornado",
-                            description=f"{player.member.display_name}{player.role.deadString}", color=0xff0000),
-                                              discord.Embed(title=":skull: :cloud_tornado: You died in a tornado",
-                                                            description="Next time buy a :house: house",
-                                                            color=0xff0000))
+                        name = player.member.display_name
+                        main_embed = discord.Embed(
+                            title=(
+                                f":skull: :cloud_tornado: "
+                                f"{name} died in the tornado"
+                            ),
+                            description=(
+                                f"{name}{player.role.deadString}"
+                            ),
+                            color=0xff0000
+                        )
+                        dm_embed = discord.Embed(
+                            title=":skull: :cloud_tornado: You died in a tornado",
+                            description="Next time buy a :house: house",
+                            color=0xff0000
+                        )
+                        await self.killPlayer(
+                            player, main_embed, dm_embed
+                        )
 
         if len(self.players) <= 5:
             if not self.fivePlayersLeftGoldIncrease:
                 self.goldPerDay += 1
                 self.fivePlayersLeftGoldIncrease = True
-                await self.mainChannel.send(
-                    embed=discord.Embed(title=":chart_with_upwards_trend: Gold per day increased",
-                                        description=f"Because 5 or less players are remaining, the gold received per day increased from {self.goldPerDay - 1} to {self.goldPerDay}",
-                                        color=0x00ff00))
+                embed = discord.Embed(
+                    title=":chart_with_upwards_trend: Gold per day increased",
+                    description=(
+                        f"Because 5 or less players are remaining, the "
+                        f"gold received per day increased from "
+                        f"{self.goldPerDay - 1} to {self.goldPerDay}"
+                    ),
+                    color=0x00ff00
+                )
+                await self.mainChannel.send(embed=embed)
 
         if self.day % 3 == 0:
             self.goldPerDay += 1
-            await self.mainChannel.send(embed=discord.Embed(title=":chart_with_upwards_trend: Gold per day increased",
-                                                            description=f"Every 3 days the gold earned by day increases by 1. The gold received per day is now {self.goldPerDay}.",
-                                                            color=0x00ff00))
+            embed = discord.Embed(
+                title=":chart_with_upwards_trend: Gold per day increased",
+                description=(
+                    f"Every 3 days the gold earned by day increases by "
+                    f"1. The gold received per day is now {self.goldPerDay}."
+                ),
+                color=0x00ff00
+            )
+            await self.mainChannel.send(embed=embed)
 
         for player in self.players:
             if player.role.name != "banker":
@@ -734,9 +1063,17 @@ class game:
             else:
                 player.gold += self.goldPerDay + 1
 
-        await self.mainChannel.send(embed=discord.Embed(title=f":coin: Everyone received {self.goldPerDay} gold",
-                                                        description=f"Every morning, everyone will receive :coin: {self.goldPerDay} gold.\nIf there is a :person_in_tuxedo: banker, then they received :coin: {self.goldPerDay + 1} gold.",
-                                                        color=0x00b8ff))
+        embed = discord.Embed(
+            title=f":coin: Everyone received {self.goldPerDay} gold",
+            description=(
+                f"Every morning, everyone will receive :coin: "
+                f"{self.goldPerDay} gold.\nIf there is a "
+                f":person_in_tuxedo: banker, then they received "
+                f":coin: {self.goldPerDay + 1} gold."
+            ),
+            color=0x00b8ff
+        )
+        await self.mainChannel.send(embed=embed)
 
         # lottery
         for player in self.players:
@@ -761,13 +1098,31 @@ class game:
                         wonPrize = True
 
                     if wonPrize:
-                        await self.mainChannel.send(embed=discord.Embed(
-                            title=f":moneybag: {player.member.display_name} won :coin: {player.gold - goldBeforePrize} gold in the lottery!",
-                            description="Their lottery ticket is now no longer in their inventory", color=0x00ff00))
+                        prize = player.gold - goldBeforePrize
+                        name = player.member.display_name
+                        embed = discord.Embed(
+                            title=(
+                                f":moneybag: {name} won :coin: "
+                                f"{prize} gold in the lottery!"
+                            ),
+                            description=(
+                                "Their lottery ticket is now no longer "
+                                "in their inventory"
+                            ),
+                            color=0x00ff00
+                        )
+                        await self.mainChannel.send(embed=embed)
                     else:
-                        await self.mainChannel.send(embed=discord.Embed(
-                            title=f":money_with_wings: {player.member.display_name} lost the lottery",
-                            description="Their lottery ticket is now no longer in their inventory", color=0xff0000))
+                        name = player.member.display_name
+                        embed = discord.Embed(
+                            title=f":money_with_wings: {name} lost the lottery",
+                            description=(
+                                "Their lottery ticket is now no longer "
+                                "in their inventory"
+                            ),
+                            color=0xff0000
+                        )
+                        await self.mainChannel.send(embed=embed)
                     await items.removeFromInventory(item, player)
                     break
         if not self.debug:
@@ -778,12 +1133,22 @@ class game:
             player.voted = False
             player.votes = 0
         self.voteTime = True
-        desc = "Vote on who you think is the murderer with !vote <@username>.\n\nYou will have 120 seconds to vote."
-        if len(self.allPlayers) >= roles["fool"] and not self.foolKilled:
-            desc += "\n\nIt's possible that there is a :clown: fool here, if they get voted to be executed they win."
-        await self.mainChannel.send(embed=discord.Embed(title="Vote to execute someone using !vote <player>",
-                                                        description=desc,
-                                                        color=0x00b8ff))
+        desc = (
+            "Vote on who you think is the murderer with "
+            "!vote <@username>.\n\nYou will have 120 seconds to vote."
+        )
+        fool_threshold = roles["fool"]
+        if len(self.allPlayers) >= fool_threshold and not self.foolKilled:
+            desc += (
+                "\n\nIt's possible that there is a :clown: fool here, "
+                "if they get voted to be executed they win."
+            )
+        embed = discord.Embed(
+            title="Vote to execute someone using !vote <player>",
+            description=desc,
+            color=0x00b8ff
+        )
+        await self.mainChannel.send(embed=embed)
 
         extendedTooMuchMessageSent = False
         count = dataStorage.getGuildData(self.guild, "votingTime", default=120)
@@ -791,10 +1156,19 @@ class game:
 
             if len(self.playersThatVoted) == len(self.players):
                 if count > 16:
-                    await self.mainChannel.send(
-                        embed=discord.Embed(title="Everyone has voted, voting time has been set to 15 seconds",
-                                            description="Because everyone has voted, the voting time has been set to 15 seconds. If you want to change your vote, do it now.",
-                                            color=0x0088ff))
+                    embed = discord.Embed(
+                        title=(
+                            "Everyone has voted, voting time has been "
+                            "set to 15 seconds"
+                        ),
+                        description=(
+                            "Because everyone has voted, the voting time "
+                            "has been set to 15 seconds. If you want to "
+                            "change your vote, do it now."
+                        ),
+                        color=0x0088ff
+                    )
+                    await self.mainChannel.send(embed=embed)
                     count = 15
 
             if self.skipVotingTime:
@@ -810,21 +1184,48 @@ class game:
                 if count <= 15:
                     if self.timesVotingTimeExtended < 7:
                         count = 15
-                        await self.mainChannel.send(
-                            embed=discord.Embed(title=f"Voting time has been extended to {count} seconds",
-                                                description=f"To prevent people from submitting their votes last-second and changing the voting result without other players knowing, the voting time has been extended to {count} seconds.",
-                                                color=0x0088ff))
+                        embed = discord.Embed(
+                            title=(
+                                f"Voting time has been extended to "
+                                f"{count} seconds"
+                            ),
+                            description=(
+                                "To prevent people from submitting their "
+                                "votes last-second and changing the voting "
+                                "result without other players knowing, the "
+                                f"voting time has been extended to "
+                                f"{count} seconds."
+                            ),
+                            color=0x0088ff
+                        )
+                        await self.mainChannel.send(embed=embed)
                     else:
                         if not extendedTooMuchMessageSent:
                             count = 15
-                            await self.mainChannel.send(
-                                embed=discord.Embed(title=f"Voting time has been extended to {count} seconds",
-                                                    description=f"To prevent people from submitting their votes last-second and changing the voting result without other players knowing, the voting time has been extended to {count} seconds.",
-                                                    color=0x0088ff))
-                            await self.mainChannel.send(
-                                embed=discord.Embed(title="Voting time will not get extended anymore",
-                                                    description="The voting time got extended too many times and will no longer get extended now",
-                                                    color=0xff0000))
+                            embed = discord.Embed(
+                                title=(
+                                    f"Voting time has been extended to "
+                                    f"{count} seconds"
+                                ),
+                                description=(
+                                    "To prevent people from submitting "
+                                    "their votes last-second and changing "
+                                    "the voting result without other "
+                                    f"players knowing, the voting time has "
+                                    f"been extended to {count} seconds."
+                                ),
+                                color=0x0088ff
+                            )
+                            await self.mainChannel.send(embed=embed)
+                            embed2 = discord.Embed(
+                                title="Voting time will not get extended anymore",
+                                description=(
+                                    "The voting time got extended too many "
+                                    "times and will no longer get extended"
+                                ),
+                                color=0xff0000
+                            )
+                            await self.mainChannel.send(embed=embed2)
                             extendedTooMuchMessageSent = True
                 self.extendVotingTime = False
 
@@ -837,92 +1238,176 @@ class game:
         # create embed
         tie = False
         if votes[0].votes != votes[1].votes:
-            voteResultEmbedTitle = f"Vote results are in, {votes[0].member.display_name} will be executed"
+            name = votes[0].member.display_name
+            voteResultEmbedTitle = (
+                f"Vote results are in, {name} will be executed"
+            )
         else:
             voteResultEmbedTitle = "There was a tie, no one will be executed."
             tie = True
-        embedDesc = "These are the results of the vote. The player with the most votes will get executed.\n"
+        embedDesc = (
+            "These are the results of the vote. The player with the "
+            "most votes will get executed.\n"
+        )
         for player in votes:
             embedDesc = embedDesc + f"\n{player.member.mention}: {player.votes}"
-        await self.mainChannel.send(
-            embed=discord.Embed(title=voteResultEmbedTitle, description=embedDesc, color=0x00b8ff))
+        embed = discord.Embed(
+            title=voteResultEmbedTitle,
+            description=embedDesc,
+            color=0x00b8ff
+        )
+        await self.mainChannel.send(embed=embed)
         self.playersThatVoted = []
 
         for player in self.players:
             if player.voted:
                 if player.votedOn.role == "murderer":
-                    objectives.addObjectiveProgress(player.member, "voteOnMurderer", 1)
+                    objectives.addObjectiveProgress(
+                        player.member, "voteOnMurderer", 1
+                    )
                     if self.day == 1:
                         if len(self.allPlayers) >= 6:
-                            objectives.addObjectiveProgress(player.member, "dayOneMurdererVote6PlayersOrMore", 1)
+                            objectives.addObjectiveProgress(
+                                player.member,
+                                "dayOneMurdererVote6PlayersOrMore", 1
+                            )
 
         await asyncio.sleep(2)
         # kill player
         if not tie:
             if votes[0].role.name != "fool":
-                await self.killPlayer(votes[0], discord.Embed(title=f"{votes[0].member.display_name} got executed",
-                                                              description=f"{votes[0].member.display_name}{votes[0].role.deadString}",
-                                                              color=0xff000d),
-                                      discord.Embed(title=f":skull: You died because you got executed.",
-                                                    description="Try convincing the other players that you're not the murderer next time!",
-                                                    color=0xff000d), bypassItems=True)
+                name = votes[0].member.display_name
+                main_embed = discord.Embed(
+                    title=f"{name} got executed",
+                    description=f"{name}{votes[0].role.deadString}",
+                    color=0xff000d
+                )
+                dm_embed = discord.Embed(
+                    title=":skull: You died because you got executed.",
+                    description=(
+                        "Try convincing the other players that you're "
+                        "not the murderer next time!"
+                    ),
+                    color=0xff000d
+                )
+                await self.killPlayer(
+                    votes[0], main_embed, dm_embed, bypassItems=True
+                )
 
             else:
-                await self.mainChannel.send(embed=discord.Embed(title=f"{votes[0].member.display_name} got executed",
-                                                                description=f"{votes[0].member.display_name}{votes[0].role.deadString}",
-                                                                color=0xff000d))
+                name = votes[0].member.display_name
+                embed = discord.Embed(
+                    title=f"{name} got executed",
+                    description=f"{name}{votes[0].role.deadString}",
+                    color=0xff000d
+                )
+                await self.mainChannel.send(embed=embed)
                 self.foolWin = True
                 await asyncio.sleep(1)
-                await self.mainChannel.send(embed=discord.Embed(title=":clown: Fool wins!",
-                                                                description="The fool has won because he got executed!",
-                                                                color=0xfff100))
+                embed2 = discord.Embed(
+                    title=":clown: Fool wins!",
+                    description="The fool has won because he got executed!",
+                    color=0xfff100
+                )
+                await self.mainChannel.send(embed=embed2)
                 await asyncio.sleep(10)
                 await self.stopGame()
 
         await asyncio.sleep(10)
         if self.victory is None:
-            await self.mainChannel.send(embed=discord.Embed(title=":white_sun_small_cloud: The sun is about to set!",
-                                                            description="Night will approach in 20 seconds.",
-                                                            color=0xffe800))
+            embed = discord.Embed(
+                title=":white_sun_small_cloud: The sun is about to set!",
+                description="Night will approach in 20 seconds.",
+                color=0xffe800
+            )
+            await self.mainChannel.send(embed=embed)
             await asyncio.sleep(2)
             # weather
             self.weatherIntensity = random.randint(1, 100)
             self.moon = random.randint(1, 5)
-            desc = "Welcome to today's weather forecast. Here is the predicted weather for tonight:\n\n"
+            desc = (
+                "Welcome to today's weather forecast. Here is the "
+                "predicted weather for tonight:\n\n"
+            )
             if self.weatherIntensity <= 60:
-                desc += ":milky_way: Tonight there will be a clear sky without any clouds or extreme weather."
+                desc += (
+                    ":milky_way: Tonight there will be a clear sky "
+                    "without any clouds or extreme weather."
+                )
             elif 60 < self.weatherIntensity <= 80:
-                desc += ":dash: Tonight it will be a bit windy. If you're lucky some :coin: gold might even blow to your home!"
+                desc += (
+                    ":dash: Tonight it will be a bit windy. If you're "
+                    "lucky some :coin: gold might even blow to your home!"
+                )
             elif 80 < self.weatherIntensity <= 90:
-                desc += ":thunder_cloud_rain: Tonight there will be a thunderstorm and broadcasting communication systems might not work."
+                desc += (
+                    ":thunder_cloud_rain: Tonight there will be a "
+                    "thunderstorm and broadcasting communication "
+                    "systems might not work."
+                )
             elif 90 < self.weatherIntensity <= 95:
-                desc += ":fog: Tonight it will be very foggy and the :spy: detective might not be able to do their work."
+                desc += (
+                    ":fog: Tonight it will be very foggy and the "
+                    ":spy: detective might not be able to do their work."
+                )
             elif self.weatherIntensity > 95:
-                desc += ":cloud_tornado: Tonight there will be a tornado. It is highly recommended to seek shelter for tonight! The shop will sell a :house: house for you to hide in during the tornado."
+                desc += (
+                    ":cloud_tornado: Tonight there will be a tornado. "
+                    "It is highly recommended to seek shelter for tonight! "
+                    "The shop will sell a :house: house for you to hide "
+                    "in during the tornado."
+                )
             desc += "\n"
             if self.moon == 1:
-                desc += ":new_moon: Also tonight the moon won't be visible. It will be very dark and the :dagger: murderer might not have enough light locate someone to kill."
+                desc += (
+                    ":new_moon: Also tonight the moon won't be visible. "
+                    "It will be very dark and the :dagger: murderer might "
+                    "not have enough light locate someone to kill."
+                )
             elif self.moon == 2:
-                desc += ":waning_crescent_moon: Also tonight the moon will be partially visible."
+                desc += (
+                    ":waning_crescent_moon: Also tonight the moon will "
+                    "be partially visible."
+                )
             elif self.moon == 3:
-                desc += ":last_quarter_moon: Also tonight the moon will be partially visible."
+                desc += (
+                    ":last_quarter_moon: Also tonight the moon will be "
+                    "partially visible."
+                )
             elif self.moon == 4:
-                desc += ":waning_gibbous_moon: Also tonight the moon will be partially visible."
+                desc += (
+                    ":waning_gibbous_moon: Also tonight the moon will be "
+                    "partially visible."
+                )
             elif self.moon == 5:
-                desc += ":full_moon: Also tonight there will be a full moon. If there is a :wolf: werewolf then they might kill someone."
+                desc += (
+                    ":full_moon: Also tonight there will be a full moon. "
+                    "If there is a :wolf: werewolf then they might kill "
+                    "someone."
+                )
             desc += "\n\nThat was the weather report for upcoming night. Goodbye!"
 
-            await self.mainChannel.send(
-                embed=discord.Embed(title=":radio: Weather forecast", description=desc, color=0x00ff00))
+            embed = discord.Embed(
+                title=":radio: Weather forecast",
+                description=desc,
+                color=0x00ff00
+            )
+            await self.mainChannel.send(embed=embed)
 
             await asyncio.sleep(8)
-            await self.mainChannel.send(embed=discord.Embed(title=":white_sun_cloud: The sun is about to set!",
-                                                            description="Night will approach in 10 seconds.",
-                                                            color=0xffe800))
+            embed = discord.Embed(
+                title=":white_sun_cloud: The sun is about to set!",
+                description="Night will approach in 10 seconds.",
+                color=0xffe800
+            )
+            await self.mainChannel.send(embed=embed)
             await asyncio.sleep(5)
-            await self.mainChannel.send(embed=discord.Embed(title=":city_sunset: The sun is about to set!",
-                                                            description="Night will approach in 5 seconds.",
-                                                            color=0xffe800))
+            embed = discord.Embed(
+                title=":city_sunset: The sun is about to set!",
+                description="Night will approach in 5 seconds.",
+                color=0xffe800
+            )
+            await self.mainChannel.send(embed=embed)
             await asyncio.sleep(5)
             await self.makeNightTime()
 
@@ -973,22 +1458,46 @@ class game:
             if foundMurderer:
                 if len(self.players) <= 2:
                     for player in self.players:
-                        await player.nightChannel.set_permissions(player.member, read_messages=False,
-                                                                  send_messages=False)
+                        await player.nightChannel.set_permissions(
+                            player.member,
+                            read_messages=False,
+                            send_messages=False
+                        )
                         if hasattr(player, "roleChannel"):
-                            await player.roleChannel.set_permissions(player.member, read_messages=False,
-                                                                     send_messages=False)
+                            await player.roleChannel.set_permissions(
+                                player.member,
+                                read_messages=False,
+                                send_messages=False
+                            )
 
                     if self.findRole("murderer").inLove:
-                        await self.mainChannel.send(
-                            embed=discord.Embed(title=":dagger: :couple_with_heart: Murderer and their lover win!",
-                                                description="The murderer killed everyone except their lover!\n\n\nGame will end in 10 seconds...",
-                                                color=0xa80700))
+                        embed = discord.Embed(
+                            title=(
+                                ":dagger: :couple_with_heart: "
+                                "Murderer and their lover win!"
+                            ),
+                            description=(
+                                "The murderer killed everyone except their "
+                                "lover!\n\n\nGame will end in 10 seconds..."
+                            ),
+                            color=0xa80700
+                        )
+                        await self.mainChannel.send(embed=embed)
                     else:
-                        await self.mainChannel.send(embed=discord.Embed(title=":dagger: Murderer wins!",
-                                                                        description="Only 1 player besides the murderer is still alive. The murderer kills the remaining player and wins the game!\n\n\nGame will end in 10 seconds...",
-                                                                        color=0xa80700))
-                    await self.mainChannel.set_permissions(self.role, read_messages=True, send_messages=True)
+                        embed = discord.Embed(
+                            title=":dagger: Murderer wins!",
+                            description=(
+                                "Only 1 player besides the murderer is "
+                                "still alive. The murderer kills the "
+                                "remaining player and wins the game!\n\n\n"
+                                "Game will end in 10 seconds..."
+                            ),
+                            color=0xa80700
+                        )
+                        await self.mainChannel.send(embed=embed)
+                    await self.mainChannel.set_permissions(
+                        self.role, read_messages=True, send_messages=True
+                    )
                     self.victory = False
                     await asyncio.sleep(10)
                     await self.stopGame()
@@ -996,37 +1505,77 @@ class game:
                 elif len(self.players) == 3:
                     if self.findRole("werewolf") is not None:
                         for player in self.players:
-                            await player.nightChannel.set_permissions(player.member, read_messages=False,
-                                                                      send_messages=False)
+                            await player.nightChannel.set_permissions(
+                                player.member,
+                                read_messages=False,
+                                send_messages=False
+                            )
                             if hasattr(player, "roleChannel"):
-                                await player.roleChannel.set_permissions(player.member, read_messages=False,
-                                                                         send_messages=False)
+                                await player.roleChannel.set_permissions(
+                                    player.member,
+                                    read_messages=False,
+                                    send_messages=False
+                                )
                         if self.findRole("murderer").inLove:
-                            await self.mainChannel.send(embed=discord.Embed(
-                                title=":dagger: :couple_with_heart: :wolf: Murderer, their lover and the werewolf win!",
-                                description="Only 1 player besides the murderer and werewolf is still alive. The murderer and werewolf kill the remaining player and wins the game!\n\n\nGame will end in 10 seconds...",
-                                color=0xa80700))
+                            embed = discord.Embed(
+                                title=(
+                                    ":dagger: :couple_with_heart: :wolf: "
+                                    "Murderer, their lover and the werewolf win!"
+                                ),
+                                description=(
+                                    "Only 1 player besides the murderer and "
+                                    "werewolf is still alive. The murderer "
+                                    "and werewolf kill the remaining player "
+                                    "and wins the game!\n\n\n"
+                                    "Game will end in 10 seconds..."
+                                ),
+                                color=0xa80700
+                            )
+                            await self.mainChannel.send(embed=embed)
 
                         else:
-                            await self.mainChannel.send(embed=discord.Embed(
+                            embed = discord.Embed(
                                 title=":dagger: :wolf: Murderer and werewolf win!",
-                                description="Only 1 player besides the murderer and werewolf is still alive. The murderer and werewolf kill the remaining player and wins the game!\n\n\nGame will end in 10 seconds...",
-                                color=0xa80700))
-                        await self.mainChannel.set_permissions(self.role, read_messages=True, send_messages=True)
+                                description=(
+                                    "Only 1 player besides the murderer and "
+                                    "werewolf is still alive. The murderer "
+                                    "and werewolf kill the remaining player "
+                                    "and wins the game!\n\n\n"
+                                    "Game will end in 10 seconds..."
+                                ),
+                                color=0xa80700
+                            )
+                            await self.mainChannel.send(embed=embed)
+                        await self.mainChannel.set_permissions(
+                            self.role, read_messages=True, send_messages=True
+                        )
                         self.victory = False
                         await asyncio.sleep(10)
                         await self.stopGame()
 
             else:
                 for player in self.players:
-                    await player.nightChannel.set_permissions(player.member, read_messages=False, send_messages=False)
+                    await player.nightChannel.set_permissions(
+                        player.member, read_messages=False, send_messages=False
+                    )
                     if hasattr(player, "roleChannel"):
-                        await player.roleChannel.set_permissions(player.member, read_messages=False,
-                                                                 send_messages=False)
-                await self.mainChannel.send(embed=discord.Embed(title=":tada: Victory!",
-                                                                description="The murderer has been killed! The villagers won!\n\n\nGame will end in 10 seconds...",
-                                                                color=0x00ff00))
-                await self.mainChannel.set_permissions(self.role, read_messages=True, send_messages=True)
+                        await player.roleChannel.set_permissions(
+                            player.member,
+                            read_messages=False,
+                            send_messages=False
+                        )
+                embed = discord.Embed(
+                    title=":tada: Victory!",
+                    description=(
+                        "The murderer has been killed! The villagers won!"
+                        "\n\n\nGame will end in 10 seconds..."
+                    ),
+                    color=0x00ff00
+                )
+                await self.mainChannel.send(embed=embed)
+                await self.mainChannel.set_permissions(
+                    self.role, read_messages=True, send_messages=True
+                )
                 self.victory = True
                 await asyncio.sleep(10)
                 await self.stopGame()
@@ -1036,54 +1585,126 @@ class game:
         # summary embed
         if not self.foolWin:
             if self.victory:
-                embed = discord.Embed(title=":tada: Villagers won!",
-                                      description="A game just ended because the murderer got killed!", color=0x00ff00)
+                embed = discord.Embed(
+                    title=":tada: Villagers won!",
+                    description=(
+                        "A game just ended because the murderer got killed!"
+                    ),
+                    color=0x00ff00
+                )
 
                 for plr in self.allPlayers:
-                    if plr.role.name != "murderer" or plr.role.name != "werewolf" or plr.role.name != "fool":
-                        setPlayerData(plr.member, "villagerWins", increase=1)  # increase wins
+                    is_bad = (
+                        plr.role.name != "murderer" or
+                        plr.role.name != "werewolf" or
+                        plr.role.name != "fool"
+                    )
+                    if is_bad:
+                        setPlayerData(
+                            plr.member, "villagerWins", increase=1
+                        )
                     for plr in self.players:
-                        if plr.role.name != "murderer" or plr.role.name != "werewolf" or plr.role.name != "fool":
-                            objectives.addObjectiveProgress(plr.member, "villagerWinsNoDeath", 1)
+                        is_bad = (
+                            plr.role.name != "murderer" or
+                            plr.role.name != "werewolf" or
+                            plr.role.name != "fool"
+                        )
+                        if is_bad:
+                            objectives.addObjectiveProgress(
+                                plr.member, "villagerWinsNoDeath", 1
+                            )
 
             else:
                 if self.findRole("werewolf") is not None:
                     if self.findRole("murderer").inLove:
                         embed = discord.Embed(
-                            title=":dagger: :couple_with_heart: :wolf: Murderer, their lover and the werewolf won!",
-                            description="A game just ended because the murderer and werewolf killed everybody!",
-                            color=0xff0000)
-                        setPlayerData(self.findRole("murderer").lover.member, "villagerWins", increase=1)
+                            title=(
+                                ":dagger: :couple_with_heart: :wolf: "
+                                "Murderer, their lover and the werewolf won!"
+                            ),
+                            description=(
+                                "A game just ended because the murderer "
+                                "and werewolf killed everybody!"
+                            ),
+                            color=0xff0000
+                        )
+                        setPlayerData(
+                            self.findRole("murderer").lover.member,
+                            "villagerWins", increase=1
+                        )
                     else:
-                        embed = discord.Embed(title=":dagger: :wolf: Murderer and werewolf won!",
-                                              description="A game just ended because the murderer and werewolf killed everybody!",
-                                              color=0xff0000)
-                    setPlayerData(self.findRole("werewolf").member, "werewolfWins", increase=1)  # increase wins
+                        embed = discord.Embed(
+                            title=":dagger: :wolf: Murderer and werewolf won!",
+                            description=(
+                                "A game just ended because the murderer "
+                                "and werewolf killed everybody!"
+                            ),
+                            color=0xff0000
+                        )
+                    setPlayerData(
+                        self.findRole("werewolf").member,
+                        "werewolfWins", increase=1
+                    )
                 else:
                     if self.findRole("murderer").inLove:
-                        embed = discord.Embed(title=":dagger: :couple_with_heart: Murderer and their lover won!",
-                                              description="A game just ended because the murderer killed everybody!",
-                                              color=0xff0000)
-                        setPlayerData(self.findRole("murderer").lover.member, "villagerWins", increase=1)
+                        embed = discord.Embed(
+                            title=(
+                                ":dagger: :couple_with_heart: "
+                                "Murderer and their lover won!"
+                            ),
+                            description=(
+                                "A game just ended because the murderer "
+                                "killed everybody!"
+                            ),
+                            color=0xff0000
+                        )
+                        setPlayerData(
+                            self.findRole("murderer").lover.member,
+                            "villagerWins", increase=1
+                        )
                     else:
-                        embed = discord.Embed(title=":dagger: Murderer won!",
-                                              description="A game just ended because the murderer killed everybody!",
-                                              color=0xff0000)
-                setPlayerData(self.findRole("murderer").member, "murdererWins", increase=1)  # increase wins
-                objectives.addObjectiveProgress(self.findRole("murderer").member, "murdererWins", 1)
+                        embed = discord.Embed(
+                            title=":dagger: Murderer won!",
+                            description=(
+                                "A game just ended because the murderer "
+                                "killed everybody!"
+                            ),
+                            color=0xff0000
+                        )
+                murderer = self.findRole("murderer")
+                setPlayerData(
+                    murderer.member, "murdererWins", increase=1
+                )
+                objectives.addObjectiveProgress(
+                    murderer.member, "murdererWins", 1
+                )
         else:
-            embed = discord.Embed(title=":clown: Fool won!",
-                                  description="A game just ended because the fool got executed",
-                                  color=0xfff100)
-            setPlayerData(self.findRole("fool").member, "foolWins", increase=1)  # increase wins
+            embed = discord.Embed(
+                title=":clown: Fool won!",
+                description="A game just ended because the fool got executed",
+                color=0xfff100
+            )
+            fool = self.findRole("fool")
+            setPlayerData(fool.member, "foolWins", increase=1)
 
-        embed.add_field(name="Game summary",
-                        value=f":sunny: Day {self.day}\n:busts_in_silhouette: Total players: {len(self.allPlayers)}\n:bust_in_silhouette: Players remaining: {len(self.players)}\n\n",
-                        inline=False)
+        summary_value = (
+            f":sunny: Day {self.day}\n"
+            f":busts_in_silhouette: Total players: {len(self.allPlayers)}\n"
+            f":bust_in_silhouette: Players remaining: {len(self.players)}\n\n"
+        )
+        embed.add_field(
+            name="Game summary",
+            value=summary_value,
+            inline=False
+        )
         rolelessPlayers = []
         for player in self.allPlayers:
             if player.role.name != "none":
-                embed.add_field(name=f"{player.role.fancyName}", value=f"{player.member.mention}", inline=True)
+                embed.add_field(
+                    name=f"{player.role.fancyName}",
+                    value=f"{player.member.mention}",
+                    inline=True
+                )
             else:
                 rolelessPlayers.append(player)
             setPlayerData(player.member, "gamesPlayed", increase=1)
@@ -1091,36 +1712,73 @@ class game:
         for player in rolelessPlayers:
             rolelessPlayersFieldValue += f"{player.member.mention} "
         if rolelessPlayersFieldValue != "":
-            embed.add_field(name=":bust_in_silhouette: no role", value=rolelessPlayersFieldValue, inline=True)
+            embed.add_field(
+                name=":bust_in_silhouette: no role",
+                value=rolelessPlayersFieldValue,
+                inline=True
+            )
 
-        if dataStorage.getGuildData(self.guild, "useSummaryEmbeds"):
-            summaryChannel = self.guild.get_channel(dataStorage.getGuildData(self.guild, "summaryChannel"))
+        use_summary = dataStorage.getGuildData(
+            self.guild, "useSummaryEmbeds"
+        )
+        if use_summary:
+            summary_ch_id = dataStorage.getGuildData(
+                self.guild, "summaryChannel"
+            )
+            summaryChannel = self.guild.get_channel(summary_ch_id)
             if summaryChannel is not None:
                 try:
                     await summaryChannel.send(embed=embed)
-                except:
+                except discord.HTTPException:
                     pass
 
         for plr in self.players:
             await objectives.addXP(plr.member, self.day * 5)
-            if not self.victory and plr.role.name == "murderer" or not self.victory and plr.role.name == "werewolf" or self.foolWin and plr.role.name == "fool":
+            is_murderer = plr.role.name == "murderer"
+            is_werewolf = plr.role.name == "werewolf"
+            is_fool = plr.role.name == "fool"
+            murderer_won = not self.victory and is_murderer
+            werewolf_won = not self.victory and is_werewolf
+            fool_won = self.foolWin and is_fool
+            if murderer_won or werewolf_won or fool_won:
                 await objectives.addXP(plr.member, 20)
-            elif self.victory and plr.role.name != "murderer" and plr.role.name != "werewolf" and plr.role.name != "fool":
+            elif self.victory and not is_murderer and not is_werewolf and not is_fool:
                 await objectives.addXP(plr.member, 10)
         for plr in self.allPlayers:
             await objectives.checkForCompleteObjectives(plr.member)
             if self.guild != mainGuild:
-                if not dataStorage.getPlayerData(plr.member, "promotionalMessageSent", default=False):
-                    dataStorage.setPlayerData(plr.member, "promotionalMessageSent", value=True)
-                    embed = discord.Embed(title="Thank you for playing Murder Mystery!",
-                                          description="If you liked the game, I would highly appreciate if you joined the discord server! There you can also play the game with other people as well as suggest new features, report bugs, and more!\n\nAlso, give the bot a review on top.gg: https://top.gg/bot/1452886075621249024\n\nThanks for playing!\n-Murder Mystery's developer",
-                                          color=0x00b8ff)
-                    embed.set_thumbnail(
-                        url="https://cdn.discordapp.com/attachments/554234775590666251/863864464688676884/blue-heart_1f499.png")
+                promo_sent = dataStorage.getPlayerData(
+                    plr.member, "promotionalMessageSent", default=False
+                )
+                if not promo_sent:
+                    dataStorage.setPlayerData(
+                        plr.member, "promotionalMessageSent", value=True
+                    )
+                    embed = discord.Embed(
+                        title="Thank you for playing Murder Mystery!",
+                        description=(
+                            "If you liked the game, I would highly "
+                            "appreciate if you joined the discord server! "
+                            "There you can also play the game with other "
+                            "people as well as suggest new features, report "
+                            "bugs, and more!\n\n"
+                            "Also, give the bot a review on top.gg: "
+                            "https://top.gg/bot/1452886075621249024\n\n"
+                            "Thanks for playing!\n"
+                            "-Murder Mystery's developer"
+                        ),
+                        color=0x00b8ff
+                    )
+                    thumb_url = (
+                        "https://cdn.discordapp.com/attachments/"
+                        "554234775590666251/863864464688676884/"
+                        "blue-heart_1f499.png"
+                    )
+                    embed.set_thumbnail(url=thumb_url)
                     try:
                         await plr.member.send(embed=embed)
                         await plr.member.send(mainServerInvite)
-                    except:
+                    except discord.HTTPException:
                         pass
 
         await self.cleanUp()
@@ -1146,7 +1804,7 @@ class game:
 
         for player in self.players:
             player.inGame = False
-            if not self.guild.id in allPlayers:
+            if self.guild.id not in allPlayers:
                 allPlayers[self.guild.id] = []
             if player in allPlayers[self.guild.id]:
                 allPlayers[self.guild.id].remove(player)
@@ -1165,11 +1823,11 @@ class game:
         for channel in self.channels:
             try:
                 await channel.delete()
-            except:
+            except discord.HTTPException:
                 pass
         try:
             await self.category.delete()
-        except:
+        except discord.HTTPException:
             pass
         if self in currentGames[self.guild.id]:
             currentGames[self.guild.id].remove(self)
@@ -1215,25 +1873,49 @@ class player:
                 if not foundItem:
                     usableData.append([item, 1])
 
-            embed = discord.Embed(title=f"Inventory",
-                                  description="Here's a list of all the items you currently own. To buy more items, use !shop at night time.",
-                                  color=0x00b8ff)
+            embed = discord.Embed(
+                title="Inventory",
+                description=(
+                    "Here's a list of all the items you currently own. "
+                    "To buy more items, use !shop at night time."
+                ),
+                color=0x00b8ff
+            )
             for v in usableData:
                 if v[0].autoActivate:
-                    embed.add_field(name=f"x{v[1]} {v[0].name}",
-                                    value=f"{v[0].description}\nThis item will activate automatically",
-                                    inline=False)
+                    value = (
+                        f"{v[0].description}\n"
+                        "This item will activate automatically"
+                    )
+                    embed.add_field(
+                        name=f"x{v[1]} {v[0].name}",
+                        value=value,
+                        inline=False
+                    )
                 else:
-                    embed.add_field(name=f"x{v[1]} {v[0].name}",
-                                    value=f"{v[0].description}\nUsage: {v[0].usage}",
-                                    inline=False)
+                    value = (
+                        f"{v[0].description}\n"
+                        f"Usage: {v[0].usage}"
+                    )
+                    embed.add_field(
+                        name=f"x{v[1]} {v[0].name}",
+                        value=value,
+                        inline=False
+                    )
 
             await self.inventoryChannel.purge(limit=5)
             await self.inventoryChannel.send(embed=embed)
         else:
-            self.inventoryChannel = await self.game.category.create_text_channel("Inventory")
-            await self.inventoryChannel.set_permissions(self.game.role, read_messages=False, send_messages=False)
-            await self.inventoryChannel.set_permissions(self.member, read_messages=True, send_messages=False)
+            inv_ch = await self.game.category.create_text_channel(
+                "Inventory"
+            )
+            self.inventoryChannel = inv_ch
+            await self.inventoryChannel.set_permissions(
+                self.game.role, read_messages=False, send_messages=False
+            )
+            await self.inventoryChannel.set_permissions(
+                self.member, read_messages=True, send_messages=False
+            )
             self.game.channels.append(self.inventoryChannel)
             await self.updateInventory()
 
@@ -1252,26 +1934,53 @@ async def whisper(ctx, member: discord.Member):
                     if whisperPlayer in player.game.players:
                         if ctx.channel == player.game.mainChannel:
                             if whisperPlayer not in player.whisperingTo:
-                                if len(
-                                        f"Whisper between {player.member.display_name} and {whisperPlayer.member.display_name}") < 100:
+                                p1_name = player.member.display_name
+                                p2_name = whisperPlayer.member.display_name
+                                ch_name = f"Whisper between {p1_name} and {p2_name}"
+                                if len(ch_name) < 100:
                                     channel = await player.game.category.create_text_channel(
-                                        f"Whisper between {player.member.display_name} and {whisperPlayer.member.display_name}")
+                                        ch_name
+                                    )
                                 else:
-                                    channel = await player.game.category.create_text_channel("Whisper")
+                                    channel = await player.game.category.create_text_channel(
+                                        "Whisper"
+                                    )
                                 player.game.channels.append(channel)
-                                player.game.channelsRemoveByNight.append(channel.id)
+                                player.game.channelsRemoveByNight.append(
+                                    channel.id
+                                )
                                 player.whisperingTo.append(whisperPlayer)
                                 whisperPlayer.whisperingTo.append(player)
-                                await channel.set_permissions(player.game.role, read_messages=False,
-                                                              send_messages=False)
-                                await channel.set_permissions(player.member, read_messages=True, send_messages=True)
-                                await channel.set_permissions(whisperPlayer.member, read_messages=True,
-                                                              send_messages=True)
+                                await channel.set_permissions(
+                                    player.game.role,
+                                    read_messages=False,
+                                    send_messages=False
+                                )
+                                await channel.set_permissions(
+                                    player.member,
+                                    read_messages=True,
+                                    send_messages=True
+                                )
+                                await channel.set_permissions(
+                                    whisperPlayer.member,
+                                    read_messages=True,
+                                    send_messages=True
+                                )
 
-                                await ctx.send(embed=discord.Embed(
-                                    title=f"{player.member.display_name} and {whisperPlayer.member.display_name} are now whispering",
-                                    description="A private channel only for them has been created, they can talk to each other there. That channel will be deleted once it becomes night.",
-                                    color=0x0088ff))
+                                embed = discord.Embed(
+                                    title=(
+                                        f"{p1_name} and {p2_name} are "
+                                        "now whispering"
+                                    ),
+                                    description=(
+                                        "A private channel only for them has "
+                                        "been created, they can talk to each "
+                                        "other there. That channel will be "
+                                        "deleted once it becomes night."
+                                    ),
+                                    color=0x0088ff
+                                )
+                                await ctx.send(embed=embed)
                             else:
                                 await ctx.send(":x: You're already whispering to that player!")
                         else:
@@ -1290,7 +1999,7 @@ async def whisper(ctx, member: discord.Member):
 
 @client.command()
 async def vote(ctx, votedMember: discord.Member):
-    if not ctx.guild.id in allPlayers:
+    if ctx.guild.id not in allPlayers:
         currentGames[ctx.guild.id] = allPlayers
 
     player = getPlayer(ctx.author, ctx.message.guild)
@@ -1307,22 +2016,38 @@ async def vote(ctx, votedMember: discord.Member):
                                         votedPlayer.votes = votedPlayer.votes + 1
                                         player.voted = True
                                         player.votedOn = votedPlayer
-                                        await ctx.send(
-                                            f"{ctx.author.mention} voted to execute {votedPlayer.member.mention}! They're now at **{votedPlayer.votes}** votes.")
-                                        player.game.playersThatVoted.append(player)
+                                        vp_mention = votedPlayer.member.mention
+                                        msg = (
+                                            f"{ctx.author.mention} voted to "
+                                            f"execute {vp_mention}! They're "
+                                            f"now at **{votedPlayer.votes}** "
+                                            "votes."
+                                        )
+                                        await ctx.send(msg)
+                                        player.game.playersThatVoted.append(
+                                            player
+                                        )
 
                                         player.game.extendVotingTime = True
                                     else:
                                         if player.votedOn != votedPlayer:
                                             player.votedOn.votes -= 1
                                             votedPlayer.votes += 1
-                                            await ctx.send(
-                                                f"{ctx.author.mention} changed their vote from {player.votedOn.member.mention} to {votedPlayer.member.mention}! They're now at **{votedPlayer.votes}** votes.")
+                                            old = player.votedOn.member.mention
+                                            new = votedPlayer.member.mention
+                                            msg = (
+                                                f"{ctx.author.mention} changed "
+                                                f"their vote from {old} to "
+                                                f"{new}! They're now at "
+                                                f"**{votedPlayer.votes}** votes."
+                                            )
+                                            await ctx.send(msg)
                                             player.votedOn = votedPlayer
 
                                             player.game.extendVotingTime = True
                                         else:
-                                            await ctx.send(":x: You already voted on that player!")
+                                            msg = ":x: You already voted on that player!"
+                                            await ctx.send(msg)
                                 else:
                                     await ctx.send(":x: You can't vote on yourself!")
                             else:
@@ -1356,7 +2081,7 @@ async def use(ctx, itemName="", *, arg=None):
                                 playerArg = getPlayer(memberArg, ctx.message.guild)
                             except commands.MemberNotFound:
                                 await ctx.message.channel.send(":x: I can't find that player!")
-                            except:
+                            except Exception:
                                 await ctx.message.channel.send(":x: an unknown error occurred!")
                                 raise
                             else:
@@ -1374,11 +2099,21 @@ async def use(ctx, itemName="", *, arg=None):
                 # is last in list
                 if player.inventory[-1] == item:
                     if hasattr(player, "inventoryChannel"):
-                        await ctx.send(embed=discord.Embed(tittle=":x: Couldn't find that item in your inventory!",
-                                                           description=f"Make sure you spelled it correctly. You can view your inventory here: {player.inventoryChannel.mention}"))
+                        embed = discord.Embed(
+                            title=":x: Couldn't find that item!",
+                            description=(
+                                "Make sure you spelled it correctly. "
+                                f"You can view your inventory here: "
+                                f"{player.inventoryChannel.mention}"
+                            )
+                        )
+                        await ctx.send(embed=embed)
                     else:
-                        await ctx.send(embed=discord.Embed(tittle=":x: Couldn't find that item in your inventory!",
-                                                           description=f"Make sure you spelled it correctly."))
+                        embed = discord.Embed(
+                            title=":x: Couldn't find that item!",
+                            description="Make sure you spelled it correctly."
+                        )
+                        await ctx.send(embed=embed)
         else:
             await ctx.send(":x: You can only do this if you're in a game!")
 
@@ -1393,18 +2128,35 @@ async def shop(ctx):
         if player.inGame:
             if player.game.nightTime:
                 if ctx.message.channel == player.nightChannel:
-                    embed = discord.Embed(title=f"Shop | :coin: {player.gold}",
-                                          description="To buy something, use !buy [item].\nSome item names have spaces in them, the name that you need to enter to buy/use them is in [].",
-                                          color=0x00b8ff)
+                    embed = discord.Embed(
+                        title=f"Shop | :coin: {player.gold}",
+                        description=(
+                            "To buy something, use !buy [item].\n"
+                            "Some item names have spaces in them, the name "
+                            "that you need to enter to buy/use them is in []."
+                        ),
+                        color=0x00b8ff
+                    )
                     broadcasterInGame = False
                     for p in player.game.players:
                         if p.role.name == "broadcaster":
                             broadcasterInGame = True
-                    for itemClass in items.getItems(broadcasterInGame=broadcasterInGame, role=player.role.name):
+                    items_list = items.getItems(
+                        broadcasterInGame=broadcasterInGame,
+                        role=player.role.name
+                    )
+                    for itemClass in items_list:
                         item = itemClass()
-                        embed.add_field(name=f"{item.name}",
-                                        value=f"{item.description}\nCost: :coin: {item.cost}\nTo buy, type !buy {item.id}",
-                                        inline=False)
+                        value = (
+                            f"{item.description}\n"
+                            f"Cost: :coin: {item.cost}\n"
+                            f"To buy, type !buy {item.id}"
+                        )
+                        embed.add_field(
+                            name=f"{item.name}",
+                            value=value,
+                            inline=False
+                        )
                     await ctx.send(embed=embed)
             else:
                 await ctx.send(":x: You can only use this command during :full_moon: night time!")
@@ -1438,17 +2190,28 @@ async def buy(ctx, itemId):
                     for p in player.game.players:
                         if p.role.name == "broadcaster":
                             broadcasterInGame = True
-                    for itemClass in items.getItems(broadcasterInGame=broadcasterInGame, role=player.role.name):
+                    items_list = items.getItems(
+                        broadcasterInGame=broadcasterInGame,
+                        role=player.role.name
+                    )
+                    for itemClass in items_list:
                         if itemClass().id == itemId.lower():
                             itemFound = True
-                            await items.buy(itemClass(), player, ctx.message.channel)
+                            await items.buy(
+                                itemClass(), player, ctx.message.channel
+                            )
                             break
                     if not itemFound:
-                        await ctx.send(embed=discord.Embed(title=":x: That's not a valid item!",
-                                                           description="Make sure you spelled it correctly!",
-                                                           color=0x0000f))
+                        embed = discord.Embed(
+                            title=":x: That's not a valid item!",
+                            description="Make sure you spelled it correctly!",
+                            color=0x0000f
+                        )
+                        await ctx.send(embed=embed)
                 else:
-                    await ctx.send(f":x: You can only use this command in {player.nightChannel.mention}")
+                    mention = player.nightChannel.mention
+                    msg = f":x: You can only use this command in {mention}"
+                    await ctx.send(msg)
             else:
                 await ctx.send(":x: You can only use this command during :full_moon: night time!")
         else:
@@ -1473,20 +2236,29 @@ async def leave(ctx):
     if player is not None:
         if player.inGame:
             if not player.game.started:
-                await player.game.mainChannel.send(
-                    embed=discord.Embed(title=f":heavy_minus_sign: {player.member.display_name} left the game",
-                                        color=0xff0000))
+                name = player.member.display_name
+                embed = discord.Embed(
+                    title=f":heavy_minus_sign: {name} left the game",
+                    color=0xff0000
+                )
+                await player.game.mainChannel.send(embed=embed)
             else:
                 if not player.game.nightTime:
-                    await player.game.mainChannel.send(
-                        embed=discord.Embed(title=f":heavy_minus_sign: {player.member.display_name} left the game",
-                                            description=f"{player.member.display_name}{player.role.deadString}",
-                                            color=0xff0000))
+                    name = player.member.display_name
+                    embed = discord.Embed(
+                        title=f":heavy_minus_sign: {name} left the game",
+                        description=f"{name}{player.role.deadString}",
+                        color=0xff0000
+                    )
+                    await player.game.mainChannel.send(embed=embed)
                 else:
-                    await player.game.sendToAllNightChannels(
-                        embed=discord.Embed(title=f":heavy_minus_sign: {player.member.display_name} left the game",
-                                            description=f"{player.member.display_name}{player.role.deadString}",
-                                            color=0xff0000))
+                    name = player.member.display_name
+                    embed = discord.Embed(
+                        title=f":heavy_minus_sign: {name} left the game",
+                        description=f"{name}{player.role.deadString}",
+                        color=0xff0000
+                    )
+                    await player.game.sendToAllNightChannels(embed=embed)
             await player.game.removePlayer(player)
         else:
             await ctx.send(":x: You can only use this command while you're in a game!")
@@ -1611,35 +2383,59 @@ async def kick(ctx, member: discord.Member):
         player = getPlayer(member, ctx.guild)
         if player is not None:
             if player.inGame:
+                p_name = player.member.display_name
+                a_name = ctx.author.display_name
                 if not player.game.started:
-                    await player.game.mainChannel.send(
-                        embed=discord.Embed(
-                            title=f":heavy_minus_sign: {player.member.display_name} got kicked out of the game by {ctx.author.display_name}",
-                            color=0xff0000))
+                    embed = discord.Embed(
+                        title=(
+                            f":heavy_minus_sign: {p_name} got kicked "
+                            f"out of the game by {a_name}"
+                        ),
+                        color=0xff0000
+                    )
+                    await player.game.mainChannel.send(embed=embed)
                 else:
                     if not player.game.nightTime:
-                        await player.game.mainChannel.send(
-                            embed=discord.Embed(
-                                title=f":heavy_minus_sign: {player.member.display_name} got kicked out of the game by {ctx.author.display_name}",
-                                description=f"{player.member.display_name}{player.role.deadString}",
-                                color=0xff0000))
+                        embed = discord.Embed(
+                            title=(
+                                f":heavy_minus_sign: {p_name} got kicked "
+                                f"out of the game by {a_name}"
+                            ),
+                            description=f"{p_name}{player.role.deadString}",
+                            color=0xff0000
+                        )
+                        await player.game.mainChannel.send(embed=embed)
                     else:
-                        await player.game.sendToAllNightChannels(
-                            embed=discord.Embed(
-                                title=f":heavy_minus_sign: {player.member.display_name} got kicked out of the game by {ctx.author.display_name}",
-                                description=f"{player.member.display_name}{player.role.deadString}",
-                                color=0xff0000))
+                        embed = discord.Embed(
+                            title=(
+                                f":heavy_minus_sign: {p_name} got kicked "
+                                f"out of the game by {a_name}"
+                            ),
+                            description=f"{p_name}{player.role.deadString}",
+                            color=0xff0000
+                        )
+                        await player.game.sendToAllNightChannels(embed=embed)
                 try:
-                    await member.send(
-                        embed=discord.Embed(title=f"You got kicked out of the game by {ctx.author.display_name}!",
-                                            color=0xff0000))
-                except:
+                    embed = discord.Embed(
+                        title=f"You got kicked out of the game by {a_name}!",
+                        color=0xff0000
+                    )
+                    await member.send(embed=embed)
+                except Exception:
                     pass
                 await player.game.removePlayer(player)
             else:
-                await ctx.send(embed=discord.Embed(title="That player is not in game!", color=0xff0000))
+                embed = discord.Embed(
+                    title="That player is not in game!",
+                    color=0xff0000
+                )
+                await ctx.send(embed=embed)
         else:
-            await ctx.send(embed=discord.Embed(title="I can't find that player in any game!", color=0xff0000))
+            embed = discord.Embed(
+                title="I can't find that player in any game!",
+                color=0xff0000
+            )
+            await ctx.send(embed=embed)
 
 
 # some functions
@@ -1719,10 +2515,15 @@ async def on_message(message):
         if not dataStorage.getGuildData(message.guild, "setupFinished", default=False):
             if message.content.lower().strip().startswith("!"):
                 if message.content.lower().strip() != "!setup":
-                    await message.channel.send(
-                        embed=discord.Embed(title=":x: Please run !setup before using any commands!",
-                                            description="An admin has to use !setup before this bot can execute any commands.",
-                                            color=0xff0000))
+                    embed = discord.Embed(
+                        title=":x: Please run !setup before using any commands!",
+                        description=(
+                            "An admin has to use !setup before this bot "
+                            "can execute any commands."
+                        ),
+                        color=0xff0000
+                    )
+                    await message.channel.send(embed=embed)
                 else:
                     await client.process_commands(message)
         else:
@@ -1752,17 +2553,30 @@ async def on_guild_join(guild):
                 if v.permissions_for(guild.get_member(client.user.id)).send_messages:
                     selected = v
     if selected is not None:
-        embed = discord.Embed(title="Thanks for inviting Murder Mystery!",
-                              description="This bot brings a full on murder mystery game inside of discord!",
-                              color=0x00b8ff)
-        embed.add_field(name="""Before you can use this bot, type "!setup" """,
-                        value="""A few things need to be setup before you can use this bot. Please use "!setup" to set up the bot.""",
-                        inline=False)
-        embed.set_thumbnail(
-            url="https://cdn.discordapp.com/attachments/554234775590666251/819314838949462017/waving-hand_1f44b.png")
+        embed = discord.Embed(
+            title="Thanks for inviting Murder Mystery!",
+            description=(
+                "This bot brings a full on murder mystery game "
+                "inside of discord!"
+            ),
+            color=0x00b8ff
+        )
+        embed.add_field(
+            name='Before you can use this bot, type "!setup"',
+            value=(
+                "A few things need to be setup before you can use "
+                'this bot. Please use "!setup" to set up the bot.'
+            ),
+            inline=False
+        )
+        thumb_url = (
+            "https://cdn.discordapp.com/attachments/"
+            "554234775590666251/819314838949462017/waving-hand_1f44b.png"
+        )
+        embed.set_thumbnail(url=thumb_url)
         try:
             await selected.send(embed=embed)
-        except:
+        except discord.HTTPException:
             pass
     print(f"Joined new guild with ID {guild.id} and {guild.member_count} members")
 
@@ -1771,34 +2585,61 @@ async def on_guild_join(guild):
 async def on_member_update(before, after):
     if after.status == discord.Status.offline:
         # Respect guild setting; default now allows offline players
-        if dataStorage.getGuildData(after.guild, "kickOfflinePlayers", default=False):
+        kick_offline = dataStorage.getGuildData(
+            after.guild, "kickOfflinePlayers", default=False
+        )
+        if kick_offline:
             player = getPlayer(after, after.guild)
             if player is not None:
                 if player.inGame:
+                    name = player.member.display_name
                     if not player.game.started:
-                        await player.game.mainChannel.send(
-                            embed=discord.Embed(
-                                title=f":heavy_minus_sign: {player.member.display_name} got kicked out of the game because they went offline",
-                                color=0xff0000))
+                        embed = discord.Embed(
+                            title=(
+                                f":heavy_minus_sign: {name} got kicked "
+                                "out of the game because they went offline"
+                            ),
+                            color=0xff0000
+                        )
+                        await player.game.mainChannel.send(embed=embed)
                     else:
                         if not player.game.night:
-                            await player.game.mainChannel.send(
-                                embed=discord.Embed(
-                                    title=f":heavy_minus_sign: {player.member.display_name} got kicked out of the game because they went offline",
-                                    description=f"{player.member.display_name}{player.role.deadString}",
-                                    color=0xff0000))
+                            embed = discord.Embed(
+                                title=(
+                                    f":heavy_minus_sign: {name} got kicked "
+                                    "out because they went offline"
+                                ),
+                                description=f"{name}{player.role.deadString}",
+                                color=0xff0000
+                            )
+                            await player.game.mainChannel.send(embed=embed)
                         else:
+                            embed = discord.Embed(
+                                title=(
+                                    f":heavy_minus_sign: {name} got kicked "
+                                    "out because they went offline"
+                                ),
+                                description=f"{name}{player.role.deadString}",
+                                color=0xff0000
+                            )
                             await player.game.sendToAllNightChannels(
-                                embed=discord.Embed(
-                                    title=f":heavy_minus_sign: {player.member.display_name} got kicked out of the game because they went offline",
-                                    description=f"{player.member.display_name}{player.role.deadString}",
-                                    color=0xff0000))
+                                embed=embed
+                            )
                     try:
-                        await after.send(
-                            embed=discord.Embed(title="You got kicked out of the game because you went offline!",
-                                                description="When you change your status to offline, you automatically get kicked so the game doesn't get filled with AFK people.",
-                                                color=0xff0000))
-                    except:
+                        embed = discord.Embed(
+                            title=(
+                                "You got kicked out of the game because "
+                                "you went offline!"
+                            ),
+                            description=(
+                                "When you change your status to offline, "
+                                "you automatically get kicked so the game "
+                                "doesn't get filled with AFK people."
+                            ),
+                            color=0xff0000
+                        )
+                        await after.send(embed=embed)
+                    except discord.HTTPException:
                         pass
                     await player.game.removePlayer(player)
 
@@ -1806,28 +2647,72 @@ async def on_member_update(before, after):
 @client.event
 async def on_member_join(member):
     if member.guild == mainGuild:
-        embed = discord.Embed(title=f"{member.display_name} just joined!",
-                              description=f"Welcome {member.mention}, have fun with playing Murder Mystery!",
-                              color=0x00ff00)
+        embed = discord.Embed(
+            title=f"{member.display_name} just joined!",
+            description=(
+                f"Welcome {member.mention}, have fun with playing "
+                "Murder Mystery!"
+            ),
+            color=0x00ff00
+        )
         embed.set_thumbnail(url=member.avatar_url)
         await welcomeChannel.send(embed=embed)
 
-        embed = discord.Embed(title="Welcome to Murder Mystery!",
-                              description="Murder Mystery is a game of murder mystery inside discord using a custom discord bot.",
-                              color=0x00b8ff)
-        embed.set_thumbnail(
-            url="https://cdn.discordapp.com/attachments/554234775590666251/819314838949462017/waving-hand_1f44b.png")
-        embed.add_field(name="About the game",
-                        value="When a game starts, everyone gets assigned an in-game role. These roles have different abilities that can be used in the night. One of those roles is the murderer who can kill 1 person per night. The goal of the game is to find this person, convince other people that they're the murderer, and then vote to execute them during the day. If you are the murderer, then your goal is to kill everyone before they find out it's you.\nEvery few minutes the game cycles between day and night. During the day you can vote to execute on who you think is the murderer. The player with the most votes will get executed.")
-        embed.add_field(name="Getting started",
-                        value=f"Before playing the game, you should read the rules in {rulesChannel.mention} and read the tutorial in {gameTutorialChannel.mention}, {rolesTutorialChannel.mention}, {itemsTutorialChannel.mention} and {commandsTutorialChannel.mention}.",
-                        inline=False)
-        embed.add_field(name="Joining a game",
-                        value=f"""To join a game simply type "!join" in {joiningChannel.mention}""", inline=False)
-        embed.add_field(name="Have fun!", value="Thank you for playing Murder Mystery and have fun!")
+        thumb_url = (
+            "https://cdn.discordapp.com/attachments/"
+            "554234775590666251/819314838949462017/waving-hand_1f44b.png"
+        )
+        embed = discord.Embed(
+            title="Welcome to Murder Mystery!",
+            description=(
+                "Murder Mystery is a game of murder mystery inside "
+                "discord using a custom discord bot."
+            ),
+            color=0x00b8ff
+        )
+        embed.set_thumbnail(url=thumb_url)
+        embed.add_field(
+            name="About the game",
+            value=(
+                "When a game starts, everyone gets assigned an in-game "
+                "role. These roles have different abilities that can be "
+                "used in the night. One of those roles is the murderer "
+                "who can kill 1 person per night. The goal of the game "
+                "is to find this person, convince other people that "
+                "they're the murderer, and then vote to execute them "
+                "during the day. If you are the murderer, then your "
+                "goal is to kill everyone before they find out it's you."
+                "\nEvery few minutes the game cycles between day and "
+                "night. During the day you can vote to execute on who "
+                "you think is the murderer. The player with the most "
+                "votes will get executed."
+            )
+        )
+        embed.add_field(
+            name="Getting started",
+            value=(
+                f"Before playing the game, you should read the rules "
+                f"in {rulesChannel.mention} and read the tutorial in "
+                f"{gameTutorialChannel.mention}, {rolesTutorialChannel.mention}, "
+                f"{itemsTutorialChannel.mention} and {commandsTutorialChannel.mention}."
+            ),
+            inline=False
+        )
+        embed.add_field(
+            name="Joining a game",
+            value=(
+                f'To join a game simply type "!join" in '
+                f'{joiningChannel.mention}'
+            ),
+            inline=False
+        )
+        embed.add_field(
+            name="Have fun!",
+            value="Thank you for playing Murder Mystery and have fun!"
+        )
         try:
             await member.send(embed=embed)
-        except:
+        except discord.HTTPException:
             pass
 
 
@@ -1859,119 +2744,170 @@ async def showAllRunningGames(ctx):
 
 @client.command()
 @commands.cooldown(2, 10, commands.BucketType.user)
-async def join(ctx, indexStr: str = None):
+async def join(ctx, *args):
+    """Join a game lobby by ID. Admins must use -overwriteAdminWarning flag."""
     if await permissions.hasPermission(ctx, "member.join"):
         author = ctx.author
         guild = ctx.guild
         channel = ctx.message.channel
+        prefix = dataStorage.getGuildData(ctx.guild, 'prefix', default='!')
+
+        # Parse flags and lobby id from args (order-independent)
+        tokens = list(args) if args else []
+        overwrite_admin = any(
+            t.lower() == "-overwriteadminwarning" for t in tokens
+        )
+        # Extract first numeric token as lobby id
+        indexStr = None
+        for t in tokens:
+            if t.lstrip('-').isdigit():
+                indexStr = t
+                break
+
         allowedToRunCommandHere = True
-        joinChannel = guild.get_channel(dataStorage.getGuildData(ctx.guild, "joinChannel"))
-        if not ctx.message.author.guild_permissions.administrator or (indexStr is not None and "-overwriteAdminWarning" in indexStr):
+        joinChannel = guild.get_channel(
+            dataStorage.getGuildData(ctx.guild, "joinChannel")
+        )
+        is_admin = ctx.message.author.guild_permissions.administrator
+
+        if (not is_admin) or overwrite_admin:
             if dataStorage.getGuildData(ctx.guild, "useJoinChannel"):
                 if joinChannel is not None:
-                    if channel.id == dataStorage.getGuildData(ctx.guild, "joinChannel"):
+                    if channel.id == dataStorage.getGuildData(
+                            ctx.guild, "joinChannel"):
                         try:
                             await ctx.message.delete()
-                        except:
+                        except discord.HTTPException:
                             pass
                     else:
-                        await ctx.send(embed=discord.Embed(title=":x: You can't use that command here!",
-                                                           description=f"This command can only be used in {joinChannel.mention}",
-                                                           color=0xff0000))
+                        await ctx.send(embed=discord.Embed(
+                            title=":x: You can't use that command here!",
+                            description=f"Use {joinChannel.mention}",
+                            color=0xff0000))
                         allowedToRunCommandHere = False
-                else:
-                    # Do not send status message; join requires an explicit lobby ID
-                    pass
-            else:
-                if getPlayer(ctx.author, ctx.guild) is None:
-                    # Do not send status message; join requires an explicit lobby ID
-                    pass
+
             if allowedToRunCommandHere:
-                # Require an ID argument; do not auto-create lobbies from join
+                # Require an ID argument
                 if indexStr is None:
-                    await ctx.send(embed=discord.Embed(title=":x: Please provide a lobby ID",
-                                                       description=f"Use {dataStorage.getGuildData(ctx.guild, 'prefix', default='!')}list to find lobby IDs, then run {dataStorage.getGuildData(ctx.guild, 'prefix', default='!')}join <ID>. To create a lobby, use {dataStorage.getGuildData(ctx.guild, 'prefix', default='!')}create.",
-                                                       color=0xff0000))
+                    await ctx.send(embed=discord.Embed(
+                        title=":x: Please provide a lobby ID",
+                        description=(
+                            f"Use {prefix}list to find lobby IDs, then run "
+                            f"{prefix}join <ID>. To create a lobby, use "
+                            f"{prefix}create."
+                        ),
+                        color=0xff0000))
                     return
-                isInGame = False
-                if not guild.id in allPlayers:
-                    allPlayers[guild.id] = []
-                player = getPlayer(author, guild)
-                if player is not None:
-                    if player.inGame:
-                        isInGame = True
 
-                if not isInGame:
-                    if not isSpectating(author):
-                        # Only join a specific lobby by ID
-                        try:
-                            index = int(indexStr)
-                        except ValueError:
-                            await ctx.send(embed=discord.Embed(title=":x: Invalid ID",
-                                                               description="Please provide a numeric lobby ID.",
-                                                               color=0xff0000))
-                            return
-                        if not guild.id in currentGames:
-                            currentGames[guild.id] = []
-                        if 0 <= index < len(currentGames[guild.id]):
-                            game_to_join = currentGames[guild.id][index]
-                            # Only allow joining lobbies that haven't started yet
-                            if game_to_join.started:
-                                await ctx.send(embed=discord.Embed(title=":x: This lobby has already started",
-                                                                   description="Join an available lobby that hasn't started yet or create a new one with the create command.",
-                                                                   color=0xff0000))
-                                return
-                            # Enforce max players
-                            if len(game_to_join.players) >= dataStorage.getGuildData(ctx.guild, "maxPlayers", default=30):
-                                await ctx.send(embed=discord.Embed(title=":x: This lobby is full",
-                                                                   description="Please choose another lobby or create a new one.",
-                                                                   color=0xff0000))
-                                return
-                            # Allow joining when offline unless guild disables
-                            if author.status == discord.Status.offline and dataStorage.getGuildData(guild, "kickOfflinePlayers", default=False):
-                                embed = discord.Embed(title="You can't play if your status is offline!",
-                                                      description="Please change your status and try again.",
-                                                      color=0xff0000)
-                                await channel.send(embed=embed)
-                                return
-                            await game_to_join.addPlayer(author)
-                        else:
-                            await ctx.send(embed=discord.Embed(title=":x: Lobby not found",
-                                                               description=f"Use {dataStorage.getGuildData(ctx.guild, 'prefix', default='!')}list to find lobby IDs.",
-                                                               color=0xff0000))
+                existing = getPlayer(author, guild)
+                if existing is not None and existing.inGame:
+                    embed = discord.Embed(
+                        title="You are already in a game!",
+                        description="Leave your current game first.",
+                        color=0xff000d)
+                    await channel.send(embed=embed)
+                    return
 
-                    else:
-                        embed = discord.Embed(title="You can't join a game if you're spectating a game!",
-                                              description="Please use !spectate to stop spectating so you can join a game.",
-                                              color=0xff0000)
-                        if dataStorage.getGuildData(ctx.guild, "useJoinChannel"):
-                            await author.send(embed=embed)
-                        else:
-                            await channel.send(embed=embed)
+                if isSpectating(author):
+                    embed = discord.Embed(
+                        title="You can't join while spectating!",
+                        description="Use !spectate to stop spectating first.",
+                        color=0xff0000)
+                    await channel.send(embed=embed)
+                    return
 
-                else:
-                    embed = discord.Embed(title="You are already in a game!",
-                                          description="You can't join a game when you're already in a game.",
-                                          color=0xff000d)
-                    if dataStorage.getGuildData(ctx.guild, "useJoinChannel"):
-                        await author.send(embed=embed)
-                    else:
-                        await channel.send(embed=embed)
+                # Parse lobby index
+                try:
+                    index = int(indexStr)
+                except ValueError:
+                    await ctx.send(embed=discord.Embed(
+                        title=":x: Invalid ID",
+                        description="Please provide a numeric lobby ID.",
+                        color=0xff0000))
+                    return
+
+                if guild.id not in currentGames:
+                    currentGames[guild.id] = []
+
+                if not (0 <= index < len(currentGames[guild.id])):
+                    await ctx.send(embed=discord.Embed(
+                        title=":x: Lobby not found",
+                        description=f"Use {prefix}list to find lobby IDs.",
+                        color=0xff0000))
+                    return
+
+                game_to_join = currentGames[guild.id][index]
+
+                # Check lobby state
+                if game_to_join.started:
+                    await ctx.send(embed=discord.Embed(
+                        title=":x: This lobby has already started",
+                        description=(
+                            "Join an available lobby or create a new one "
+                            f"with {prefix}create."
+                        ),
+                        color=0xff0000))
+                    return
+
+                max_players = dataStorage.getGuildData(
+                    ctx.guild, "maxPlayers", default=30
+                )
+                if len(game_to_join.players) >= max_players:
+                    await ctx.send(embed=discord.Embed(
+                        title=":x: This lobby is full",
+                        description=(
+                            f"Max players: {max_players}. "
+                            "Choose another lobby or create a new one."
+                        ),
+                        color=0xff0000))
+                    return
+
+                # Offline check
+                kick_offline = dataStorage.getGuildData(
+                    guild, "kickOfflinePlayers", default=False
+                )
+                if author.status == discord.Status.offline and kick_offline:
+                    await channel.send(embed=discord.Embed(
+                        title="You can't play if your status is offline!",
+                        description="Change your status and try again.",
+                        color=0xff0000))
+                    return
+
+                # Success: add player
+                await game_to_join.addPlayer(author)
+
+                # Confirmation message
+                confirm_embed = discord.Embed(
+                    title=":white_check_mark: You joined lobby!",
+                    description=(
+                        f"Lobby ID: {index} | "
+                        f"Players: {len(game_to_join.players)}"
+                    ),
+                    color=0x00ff00)
+                try:
+                    await author.send(embed=confirm_embed)
+                except discord.HTTPException:
+                    pass  # DMs disabled
+
         else:
-            embed = discord.Embed(title=":warning: You have administrator permissions",
-                                  description=f"This game doesn't work well with administrator permissions, because it works by hiding channels of other players from you. With administrator permissions, you can see all channels which ruins the game.\n**Please use an alt account without administrator permissions to play this game.**\n\nUse '{dataStorage.getGuildData(guild, 'prefix', default='!')}join -overwriteAdminWarning' to join anyways.",
-                                  color=0xfff100)
+            # Admin warning
+            embed = discord.Embed(
+                title=":warning: You have administrator permissions",
+                description=(
+                    "This game hides channels from other players. "
+                    "With admin perms, you can see all channels.\n\n"
+                    "**Use an alt account without admin to play.**\n\n"
+                    f"Override: `{prefix}join <ID> -overwriteAdminWarning`"
+                ),
+                color=0xfff100)
             if dataStorage.getGuildData(ctx.guild, "useJoinChannel"):
                 try:
                     await author.send(embed=embed)
-                except:
-                    try:
-                        channel.send(embed=embed)
-                    except:
-                        pass
+                except discord.HTTPException:
+                    pass
                 try:
                     await ctx.message.delete()
-                except:
+                except discord.HTTPException:
                     pass
             else:
                 await channel.send(embed=embed)
@@ -1983,7 +2919,7 @@ async def cleanup(ctx):
     if await permissions.hasPermission(ctx, "admin.endAllGames"):
         if ctx.message.author.guild_permissions.administrator:
             await ctx.send(":hourglass: Ending all running games, Please wait...")
-            if not ctx.guild.id in currentGames:
+            if ctx.guild.id not in currentGames:
                 currentGames[ctx.guild.id] = []
             while len(currentGames[ctx.guild.id]) >= 1:
                 currentGame = currentGames[ctx.guild.id][0]
@@ -1993,11 +2929,19 @@ async def cleanup(ctx):
 
 @client.command(aliases=["discord", "bug", "reportBug", "report", "suggest", "suggestion", "suggestions"])
 async def dc(ctx):
-    embed = discord.Embed(title="Join the Murder Mystery discord server",
-                          description="Join the Murder Mystery discord server to suggest features, report bugs, or play the game with people!",
-                          color=0x00b8ff)
-    embed.set_thumbnail(
-        url="https://cdn.discordapp.com/attachments/554234775590666251/863863056516513792/dagger_1f5e1-fe0f.png")
+    embed = discord.Embed(
+        title="Join the Murder Mystery discord server",
+        description=(
+            "Join the Murder Mystery discord server to suggest features, "
+            "report bugs, or play the game with people!"
+        ),
+        color=0x00b8ff
+    )
+    thumb_url = (
+        "https://cdn.discordapp.com/attachments/"
+        "554234775590666251/863863056516513792/dagger_1f5e1-fe0f.png"
+    )
+    embed.set_thumbnail(url=thumb_url)
     await ctx.send(embed=embed)
     await ctx.send(mainServerInvite)
 
@@ -2005,13 +2949,19 @@ async def dc(ctx):
 @client.command(aliases=["stopGame"])
 async def endGame(ctx, indexStr=None):
     if await permissions.hasPermission(ctx, "admin.endGame"):
-        if not ctx.guild.id in currentGames:
+        if ctx.guild.id not in currentGames:
             currentGames[ctx.guild.id] = []
         try:
             index = int(indexStr)
         except ValueError:
-            await ctx.send(
-                f":x: Please give a game ID! You can find a game id with {dataStorage.getGuildData(ctx.guild, 'prefix', default='!')}list.")
+            prefix = dataStorage.getGuildData(
+                ctx.guild, 'prefix', default='!'
+            )
+            msg = (
+                f":x: Please give a game ID! You can find a game id "
+                f"with {prefix}list."
+            )
+            await ctx.send(msg)
         else:
             if len(currentGames[ctx.guild.id]) > index:
                 await ctx.send(f":hourglass: Ending game with ID {index}, please wait...")
@@ -2055,12 +3005,23 @@ async def createGame(ctx, debugStr="False"):
     except Exception:
         pass
     idx = currentGames[ctx.guild.id].index(game)
+    prefix = dataStorage.getGuildData(ctx.guild, 'prefix', default='!')
     if not debug:
-        embed = discord.Embed(title="A new lobby has been created!",
-                              description=f"Lobby ID: {idx}. You've been added to this lobby. Share this ID for others to join with {dataStorage.getGuildData(ctx.guild, 'prefix', default='!')}join {idx}")
+        embed = discord.Embed(
+            title="A new lobby has been created!",
+            description=(
+                f"Lobby ID: {idx}. You've been added to this lobby. "
+                f"Share this ID for others to join with "
+                f"{prefix}join {idx}"
+            )
+        )
     else:
-        embed = discord.Embed(title="A new lobby has been created in debugging mode!",
-                              description=f"Lobby ID: {idx}. You've been added to this lobby.")
+        embed = discord.Embed(
+            title="A new lobby has been created in debugging mode!",
+            description=(
+                f"Lobby ID: {idx}. You've been added to this lobby."
+            )
+        )
     await ctx.send(embed=embed)
 
 
@@ -2068,10 +3029,16 @@ async def createGame(ctx, debugStr="False"):
 @commands.cooldown(2, 10, commands.BucketType.user)
 async def list(ctx):
     if await permissions.hasPermission(ctx, "member.list"):
-        embed = discord.Embed(title="Currently running games",
-                              description="Here is a list of all currently running games.\nUse !join <ID> to join a lobby that hasn't started yet.\nUse !spectate <ID> to watch a game.",
-                              color=0x0088ff)
-        if not ctx.guild.id in currentGames:
+        embed = discord.Embed(
+            title="Currently running games",
+            description=(
+                "Here is a list of all currently running games.\n"
+                "Use !join <ID> to join a lobby that hasn't started yet.\n"
+                "Use !spectate <ID> to watch a game."
+            ),
+            color=0x0088ff
+        )
+        if ctx.guild.id not in currentGames:
             currentGames[ctx.guild.id] = []
         for game in currentGames[ctx.guild.id]:
             playerList = ""
@@ -2081,8 +3048,12 @@ async def list(ctx):
             if playerList == "":
                 playerList = "There are no players in this game"
 
-            embed.add_field(name=f"ID: {currentGames[ctx.guild.id].index(game)}",
-                            value=f"Started: {game.started}, day {game.day}, players: {playerList}")
+            idx = currentGames[ctx.guild.id].index(game)
+            value = (
+                f"Started: {game.started}, day {game.day}, "
+                f"players: {playerList}"
+            )
+            embed.add_field(name=f"ID: {idx}", value=value)
 
         await ctx.send(embed=embed)
 
@@ -2108,30 +3079,58 @@ async def spectate(ctx, indexStr=None):
                     index = int(indexStr)
                 except ValueError:
                     if ctx.channel != joiningChannel:
-                        await ctx.send(embed=discord.Embed(title=":x: Please enter a number!",
-                                                           description="Please enter a game's ID to spectate it. You can get a game's ID with !list.",
-                                                           color=0xff0000))
-                except:
+                        embed = discord.Embed(
+                            title=":x: Please enter a number!",
+                            description=(
+                                "Please enter a game's ID to spectate "
+                                "it. You can get a game's ID with !list."
+                            ),
+                            color=0xff0000
+                        )
+                        await ctx.send(embed=embed)
+                except Exception:
                     await ctx.send(":x: An unknown error occurred!")
                     raise
                 else:
-                    if index <= len(currentGames[ctx.guild.id]) - 1:
-                        await currentGames[ctx.guild.id][index].addSpectator(ctx.author)
+                    games_count = len(currentGames[ctx.guild.id]) - 1
+                    if index <= games_count:
+                        await currentGames[ctx.guild.id][index].addSpectator(
+                            ctx.author
+                        )
                         if ctx.channel != joiningChannel:
-                            await ctx.send(embed=discord.Embed(title="You are now spectating a game",
-                                                               description="The game's channel should appear on the top of your channel list.\nTo stop spectating, type !spectate again.",
-                                                               color=0x0088ff))
+                            embed = discord.Embed(
+                                title="You are now spectating a game",
+                                description=(
+                                    "The game's channel should appear on "
+                                    "the top of your channel list.\n"
+                                    "To stop spectating, type !spectate again."
+                                ),
+                                color=0x0088ff
+                            )
+                            await ctx.send(embed=embed)
                     else:
                         if ctx.channel != joiningChannel:
-                            await ctx.send(embed=discord.Embed(title=":x: That game doesn't exist!",
-                                                               description="Please enter a valid game ID. You can get a game's ID with !list."))
+                            embed = discord.Embed(
+                                title=":x: That game doesn't exist!",
+                                description=(
+                                    "Please enter a valid game ID. You can "
+                                    "get a game's ID with !list."
+                                )
+                            )
+                            await ctx.send(embed=embed)
 
 
             else:
                 if ctx.channel != joiningChannel:
-                    await ctx.send(embed=discord.Embed(title=":x: You are already in a game!",
-                                                       description="You can't spectate a game while you're already in a different game.",
-                                                       color=0xff0000))
+                    embed = discord.Embed(
+                        title=":x: You are already in a game!",
+                        description=(
+                            "You can't spectate a game while you're "
+                            "already in a different game."
+                        ),
+                        color=0xff0000
+                    )
+                    await ctx.send(embed=embed)
 
         else:
             for game in currentGames[ctx.guild.id]:
@@ -2218,38 +3217,75 @@ async def on_command_error(ctx, error):
     else:
         sendTo = ctx.channel
     if isinstance(error, commands.MemberNotFound):
-        await sendTo.send(embed=discord.Embed(title=":x: That's not a valid player!",
-                                              description="Make sure you spelled the username correctly (including capitalization). You can also mention them using @username, or by right clicking their username and pressing mention, or by pressing their username if you're on mobile.",
-                                              color=0xff0011))
+        embed = discord.Embed(
+            title=":x: That's not a valid player!",
+            description=(
+                "Make sure you spelled the username correctly "
+                "(including capitalization). You can also mention them "
+                "using @username, or by right clicking their username "
+                "and pressing mention, or by pressing their username "
+                "if you're on mobile."
+            ),
+            color=0xff0011
+        )
+        await sendTo.send(embed=embed)
     elif "NotFound: 404 Not Found" in str(error):
         print(str(error))
         raise error
 
     elif isinstance(error, commands.MissingRequiredArgument):
-
-        await sendTo.send(embed=discord.Embed(title=":x: You need to include more arguments!",
-                                              description="You haven't provided enough arguments for this command.",
-                                              color=0xff0000))
+        embed = discord.Embed(
+            title=":x: You need to include more arguments!",
+            description="You haven't provided enough arguments for this command.",
+            color=0xff0000
+        )
+        await sendTo.send(embed=embed)
     elif isinstance(error, commands.CommandNotFound):
-        if not "!d " in ctx.message.content:
-            if ctx.channel.id != dataStorage.getGuildData(ctx.guild, "joinChannel"):
+        if "!d " not in ctx.message.content:
+            join_ch = dataStorage.getGuildData(ctx.guild, "joinChannel")
+            if ctx.channel.id != join_ch:
                 if ctx.guild == mainGuild:
-                    await sendTo.send(
-                        embed=discord.Embed(title=":x: Invalid command!", description="Make sure you spelled it correctly!",
-                                            color=0xff0000))
+                    embed = discord.Embed(
+                        title=":x: Invalid command!",
+                        description="Make sure you spelled it correctly!",
+                        color=0xff0000
+                    )
+                    await sendTo.send(embed=embed)
     elif isinstance(error, ValueError):
         try:
-            await sendTo.send(embed=discord.Embed(title=":x: Value error!",
-                                                  description=f"{''.join(tb.format_exception(None, error, error.__traceback__))}\n\n\nThis error can be caused by giving the incorrect data type in a command, but it can also be a bug.\nIf you think it's a bug, please report it. Otherwise try giving the correct data type, like a number instead of text.",
-                                                  color=0xff0000))
-        except:
+            trace = ''.join(
+                tb.format_exception(None, error, error.__traceback__)
+            )
+            embed = discord.Embed(
+                title=":x: Value error!",
+                description=(
+                    f"{trace}\n\n\n"
+                    "This error can be caused by giving the incorrect "
+                    "data type in a command, but it can also be a bug.\n"
+                    "If you think it's a bug, please report it. Otherwise "
+                    "try giving the correct data type, like a number "
+                    "instead of text."
+                ),
+                color=0xff0000
+            )
+            await sendTo.send(embed=embed)
+        except Exception:
             print("Failed to send an error")
     else:
         try:
-            await sendTo.send(embed=discord.Embed(title=":x: An error occurred!",
-                                                  description=f"{''.join(tb.format_exception(None, error, error.__traceback__))}\n\n\nPlease report this error if you think this is a bug.",
-                                                  color=0xff0000))
-        except:
+            trace = ''.join(
+                tb.format_exception(None, error, error.__traceback__)
+            )
+            embed = discord.Embed(
+                title=":x: An error occurred!",
+                description=(
+                    f"{trace}\n\n\n"
+                    "Please report this error if you think this is a bug."
+                ),
+                color=0xff0000
+            )
+            await sendTo.send(embed=embed)
+        except Exception:
             print("Failed to send an error")
         raise error
 
@@ -2261,13 +3297,25 @@ async def send_embeds(ctx, mode):
         if ctx.message.author.guild_permissions.administrator:
             if mode == "local":
                 embeds = tutorial.getTutorialEmbeds(ctx.guild)
-                gameTutorialChannel = ctx.guild.get_channel(dataStorage.getGuildData(ctx.guild, "gameTutorialChannel"))
+                gameTutorialChannel = ctx.guild.get_channel(
+                    dataStorage.getGuildData(ctx.guild, "gameTutorialChannel")
+                )
                 itemsTutorialChannel = ctx.guild.get_channel(
-                    dataStorage.getGuildData(ctx.guild, "itemsTutorialChannel"))
-                rolesTutorialChannel = ctx.guild.get_channel(dataStorage.getGuildData(ctx.guild, "roleTutorialChannel"))
+                    dataStorage.getGuildData(ctx.guild, "itemsTutorialChannel")
+                )
+                rolesTutorialChannel = ctx.guild.get_channel(
+                    dataStorage.getGuildData(ctx.guild, "roleTutorialChannel")
+                )
                 commandsTutorialChannel = ctx.guild.get_channel(
-                    dataStorage.getGuildData(ctx.guild, "commandsTutorialChannel"))
-                if gameTutorialChannel is not None and itemsTutorialChannel is not None and rolesTutorialChannel is not None and commandsTutorialChannel is not None:
+                    dataStorage.getGuildData(ctx.guild, "commandsTutorialChannel")
+                )
+                all_channels_found = (
+                    gameTutorialChannel is not None and
+                    itemsTutorialChannel is not None and
+                    rolesTutorialChannel is not None and
+                    commandsTutorialChannel is not None
+                )
+                if all_channels_found:
                     await gameTutorialChannel.purge(10)
                     await itemsTutorialChannel.purge(10)
                     await rolesTutorialChannel.purge(10)
@@ -2404,84 +3452,243 @@ async def advancedHelp(ctx, category=None):
             embed = discord.Embed(title="Advanced help - :person_in_tuxedo: Admin",
                                   description="Arguments in <> are required, arguments in [] are optional",
                                   color=0x00b8ff)
-            embed.add_field(name=f"{p}purge <number>",
-                            value="permission: admin.purge\n\nDeletes the last <number> amount of messages",
-                            inline=False)
-            embed.add_field(name=f"{p}endAllGames",
-                            value=f"permission: admin.endAllGames\n\nEnds all currently running games. {p}cleanup does the same.",
-                            inline=False)
-            embed.add_field(name=f"{p}endGame <game ID>",
-                            value=f"permission: admin.endGame\n\nEnds the game with the specified ID. Game IDs can be obtained with {p}list",
-                            inline=False)
-            embed.add_field(name=f"{p}setup", value="permission: admin.setup\n\nReruns the setup", inline=False)
-            embed.add_field(name=f"{p}settings [setting] [value]",
-                            value="permission: admin.settings\n\nSet different kind of settings on how the game behaves, like the amount of players needed to start a game, how long night time takes, ect...",
-                            inline=False)
-            embed.add_field(name=f"{p}prefix [new prefix]",
-                            value="permission: admin.prefix\n\nShows the bot's current prefix or sets a new one. Members can run this command as well but can't change the prefix without the admin.prefix permission.",
-                            inline=False)
-            embed.add_field(name=f"{p}addPermission <member/role> <permission>",
-                            value="permission: admin.permissions.addPermission\n\nAdds a permission to a role or member",
-                            inline=False)
-            embed.add_field(name=f"{p}removePermission <member/role> <permission>",
-                            value="permission: admin.permissions.removePermissions\n\nRemoves a permission from a role or member",
-                            inline=False)
-            embed.add_field(name=f"{p}permissions [member/role]",
-                            value="permission: admin.permissions\n\nViews the permissions for the member/role. If no argument is given, it will show all possible permissions.",
-                            inline=False)
-            embed.add_field(name=f"{p}giveGold <player> <amount>",
-                            value="permission: admin.game.giveGold\n\nGives the specified player the specified amount of extra gold in game",
-                            inline=False)
-            embed.add_field(name=f"{p}kick <player>",
-                            value="permission: admin.game.kick\n\nKicks the specified player out of the game",
-                            inline=False)
-            embed.add_field(name=f"{p}startGame <game ID>",
-                            value="permission: admin.game.startGame\n\nSkips the pre-game timer", inline=False)
+            embed.add_field(
+                name=f"{p}purge <number>",
+                value=(
+                    "permission: admin.purge\n\n"
+                    "Deletes the last <number> amount of messages"
+                ),
+                inline=False
+            )
+            embed.add_field(
+                name=f"{p}endAllGames",
+                value=(
+                    f"permission: admin.endAllGames\n\n"
+                    f"Ends all currently running games. {p}cleanup does "
+                    "the same."
+                ),
+                inline=False
+            )
+            embed.add_field(
+                name=f"{p}endGame <game ID>",
+                value=(
+                    f"permission: admin.endGame\n\n"
+                    f"Ends the game with the specified ID. Game IDs can "
+                    f"be obtained with {p}list"
+                ),
+                inline=False
+            )
+            embed.add_field(
+                name=f"{p}setup",
+                value="permission: admin.setup\n\nReruns the setup",
+                inline=False
+            )
+            embed.add_field(
+                name=f"{p}settings [setting] [value]",
+                value=(
+                    "permission: admin.settings\n\n"
+                    "Set different kind of settings on how the game "
+                    "behaves, like the amount of players needed to start "
+                    "a game, how long night time takes, ect..."
+                ),
+                inline=False
+            )
+            embed.add_field(
+                name=f"{p}prefix [new prefix]",
+                value=(
+                    "permission: admin.prefix\n\n"
+                    "Shows the bot's current prefix or sets a new one. "
+                    "Members can run this command as well but can't "
+                    "change the prefix without the admin.prefix permission."
+                ),
+                inline=False
+            )
+            embed.add_field(
+                name=f"{p}addPermission <member/role> <permission>",
+                value=(
+                    "permission: admin.permissions.addPermission\n\n"
+                    "Adds a permission to a role or member"
+                ),
+                inline=False
+            )
+            embed.add_field(
+                name=f"{p}removePermission <member/role> <permission>",
+                value=(
+                    "permission: admin.permissions.removePermissions\n\n"
+                    "Removes a permission from a role or member"
+                ),
+                inline=False
+            )
+            embed.add_field(
+                name=f"{p}permissions [member/role]",
+                value=(
+                    "permission: admin.permissions\n\n"
+                    "Views the permissions for the member/role. If no "
+                    "argument is given, it will show all possible permissions."
+                ),
+                inline=False
+            )
+            embed.add_field(
+                name=f"{p}giveGold <player> <amount>",
+                value=(
+                    "permission: admin.game.giveGold\n\n"
+                    "Gives the specified player the specified amount of "
+                    "extra gold in game"
+                ),
+                inline=False
+            )
+            embed.add_field(
+                name=f"{p}kick <player>",
+                value=(
+                    "permission: admin.game.kick\n\n"
+                    "Kicks the specified player out of the game"
+                ),
+                inline=False
+            )
+            embed.add_field(
+                name=f"{p}startGame <game ID>",
+                value=(
+                    "permission: admin.game.startGame\n\n"
+                    "Skips the pre-game timer"
+                ),
+                inline=False
+            )
             await ctx.send(embed=embed)
         elif category == "debug":
-            embed = discord.Embed(title="Advanced help - :scroll: Debug",
-                                  description="Arguments in <> are required, arguments in [] are optional\n\n**These are advanced commands not meant to be used. Feel free to mess around, but most of these commands were made for debugging purposes and will be confusing if you don't have the source code**\n\n**:warning: Some of these commands could break the bot if used incorrectly :warning:**",
-                                  color=0x00b8ff)
-            embed.add_field(name=f"{p}createGame [True/False]",
-                            value=f"permission: debug.createGame\n\nCreates an empty game. If you want to start the game in debugging mode, use {p}createGame True.",
-                            inline=False)
-            embed.add_field(name=f"{p}addObjectiveProgress <member> <task> <value>",
-                            value=f"permission: debug.objectives.addObjectiveProgress\n\nAdds objective progress",
-                            inline=False)
-            embed.add_field(name=f"{p}giveObjective <member> <index>",
-                            value="permission: debug.objectives.giveObjective\n\nSets the objective of the player to the specified index.\n:warning: Unexpected behaviour might occur if set to an invalid index.",
-                            inline=False)
-            embed.add_field(name=f"{p}completeCurrentObjective <member>",
-                            value="permission: debug.objectives.completeCurrentObjective\n\nCompletes the specified member's current objective",
-                            inline=False)
-            embed.add_field(name=f"{p}skipObjectiveTimer <member>",
-                            value="permission: debug.objectives.skipObjectiveTimer\n\nSkips the in-between objective timer of the specified member",
-                            inline=False)
-            embed.add_field(name=f"{p}setMoon <game ID> <brightness (1-5)",
-                            value="permission: debug.game.setMoon\n\nSets the moon brightness in the specified game. 1 is no moon, 5 is full moon.\nPlease only use this command after the weather forecast, and before night time starts",
-                            inline=False)
-            embed.add_field(name=f"{p}setWeather <game ID> <intensity (0-99)>",
-                            value="permission: debug.game.setWeather\n\nSets the weather intensity. 0 for not intense and 99 for very intense.\nPlease only use this command after the weather forecast, and before night time starts",
-                            inline=False)
-            embed.add_field(name=f"{p}skipNight <game ID>", value="permission: debug.game.skipNight\n\nSkips the night",
-                            inline=False)
-            embed.add_field(name=f"{p}skipVotes <game ID>",
-                            value="permission: debug.game.skipVotes\n\nSkips voting time", inline=False)
+            embed = discord.Embed(
+                title="Advanced help - :scroll: Debug",
+                description=(
+                    "Arguments in <> are required, arguments in [] are "
+                    "optional\n\n"
+                    "**These are advanced commands not meant to be used. "
+                    "Feel free to mess around, but most of these commands "
+                    "were made for debugging purposes and will be confusing "
+                    "if you don't have the source code**\n\n"
+                    "**:warning: Some of these commands could break the bot "
+                    "if used incorrectly :warning:**"
+                ),
+                color=0x00b8ff
+            )
+            embed.add_field(
+                name=f"{p}createGame [True/False]",
+                value=(
+                    f"permission: debug.createGame\n\n"
+                    f"Creates an empty game. If you want to start the game "
+                    f"in debugging mode, use {p}createGame True."
+                ),
+                inline=False
+            )
+            embed.add_field(
+                name=f"{p}addObjectiveProgress <member> <task> <value>",
+                value="permission: debug.objectives.addObjectiveProgress\n\nAdds objective progress",
+                inline=False
+            )
+            embed.add_field(
+                name=f"{p}giveObjective <member> <index>",
+                value=(
+                    "permission: debug.objectives.giveObjective\n\n"
+                    "Sets the objective of the player to the specified index."
+                    "\n:warning: Unexpected behaviour might occur if set to "
+                    "an invalid index."
+                ),
+                inline=False
+            )
+            embed.add_field(
+                name=f"{p}completeCurrentObjective <member>",
+                value=(
+                    "permission: debug.objectives.completeCurrentObjective"
+                    "\n\nCompletes the specified member's current objective"
+                ),
+                inline=False
+            )
+            embed.add_field(
+                name=f"{p}skipObjectiveTimer <member>",
+                value=(
+                    "permission: debug.objectives.skipObjectiveTimer\n\n"
+                    "Skips the in-between objective timer of the specified "
+                    "member"
+                ),
+                inline=False
+            )
+            embed.add_field(
+                name=f"{p}setMoon <game ID> <brightness (1-5)",
+                value=(
+                    "permission: debug.game.setMoon\n\n"
+                    "Sets the moon brightness in the specified game. "
+                    "1 is no moon, 5 is full moon.\n"
+                    "Please only use this command after the weather forecast, "
+                    "and before night time starts"
+                ),
+                inline=False
+            )
+            embed.add_field(
+                name=f"{p}setWeather <game ID> <intensity (0-99)>",
+                value=(
+                    "permission: debug.game.setWeather\n\n"
+                    "Sets the weather intensity. 0 for not intense and "
+                    "99 for very intense.\n"
+                    "Please only use this command after the weather forecast, "
+                    "and before night time starts"
+                ),
+                inline=False
+            )
+            embed.add_field(
+                name=f"{p}skipNight <game ID>",
+                value="permission: debug.game.skipNight\n\nSkips the night",
+                inline=False
+            )
+            embed.add_field(
+                name=f"{p}skipVotes <game ID>",
+                value="permission: debug.game.skipVotes\n\nSkips voting time",
+                inline=False
+            )
             await ctx.send(embed=embed)
         elif category == "game":
-            embed = discord.Embed(title="Advanced help - :video_game Game",
-                                  description="Arguments in <> are required, arguments in [] are optional\nThe commands below do not have any permission settings, because they can only be used in game which can only be accessed with the permission 'member.join'.",
-                                  color=0x00b8ff)
-            embed.add_field(name=f"{p}vote <player>", value="Vote on the specified player to be executed during game",
-                            inline=False)
-            embed.add_field(name=f"{p}shop", value="Views all shop items", inline=False)
-            embed.add_field(name=f"{p}buy <item>", value="Buy an item from the shop", inline=False)
-            embed.add_field(name=f"{p}use <item> [argument]",
-                            value="Use an item. The argument being required or not depends on the item.", inline=False)
-            embed.add_field(name=f"{p}whisper <player>",
-                            value="Creates a private channel for the command runner and the specified player to talk in",
-                            inline=False)
-            embed.add_field(name=f"{p}leave", value="Leaves the game")
+            embed = discord.Embed(
+                title="Advanced help - :video_game Game",
+                description=(
+                    "Arguments in <> are required, arguments in [] are "
+                    "optional\nThe commands below do not have any permission "
+                    "settings, because they can only be used in game which "
+                    "can only be accessed with the permission 'member.join'."
+                ),
+                color=0x00b8ff
+            )
+            embed.add_field(
+                name=f"{p}vote <player>",
+                value="Vote on the specified player to be executed during game",
+                inline=False
+            )
+            embed.add_field(
+                name=f"{p}shop",
+                value="Views all shop items",
+                inline=False
+            )
+            embed.add_field(
+                name=f"{p}buy <item>",
+                value="Buy an item from the shop",
+                inline=False
+            )
+            embed.add_field(
+                name=f"{p}use <item> [argument]",
+                value=(
+                    "Use an item. The argument being required or not "
+                    "depends on the item."
+                ),
+                inline=False
+            )
+            embed.add_field(
+                name=f"{p}whisper <player>",
+                value=(
+                    "Creates a private channel for the command runner "
+                    "and the specified player to talk in"
+                ),
+                inline=False
+            )
+            embed.add_field(
+                name=f"{p}leave",
+                value="Leaves the game"
+            )
             await ctx.send(embed=embed)
 
 
@@ -2502,49 +3709,136 @@ async def settings(ctx, setting=None, value=None):
                 kickOfflinePlayersString = "Yes"
             else:
                 kickOfflinePlayersString = "No"
-            await ctx.send(embed=discord.Embed(title="List of settings",
-                                               description=f"minPlayers:{dataStorage.getGuildData(ctx.guild, 'minPlayers')}\nSet the minimal amount of players required to start a game\n\nmaxPlayers: {dataStorage.getGuildData(ctx.guild, 'maxPlayers')}\nSet the maximum players that can fit in a game\n\npreGameTimer: {dataStorage.getGuildData(ctx.guild, 'preGameTimer')}\nSets the amount of time in seconds that it takes for a game to start when the game has enough players\n\nvotingTime: {dataStorage.getGuildData(ctx.guild, 'votingTime')}\nSets the amount of time in seconds that it takes before voting time ends\n\nnightTimeTimer: {dataStorage.getGuildData(ctx.guild, 'nightTimeTimer')}\nSets the amount of time in seconds that it takes for night time to end\n\nUse !settings <setting> <value> to set a setting\nThe settings below don't need a value, but they will change from 'yes' to 'no' with !settings <setting>\n\nvoiceChannel: {voiceChannelValueSting}\nCreate a voice channel for the game when a game is created\n\nlockVoiceChannelDuringNight: {voiceChannelLockString}\nLocks the game's voice channel when it becomes night (needs voiceChannel to be set to 'yes')\n\nkickOfflinePlayers: {kickOfflinePlayersString}\nKicks players out of a game when they go offline\n\n\nTo set permissions, use !permissions and !setPermissions\nTo change the bot's prefix, use !prefix",
-                                               color=0x00b8ff))
+            settings_desc = (
+                f"minPlayers:{dataStorage.getGuildData(ctx.guild, 'minPlayers')}\n"
+                "Set the minimal amount of players required to start a game\n\n"
+                f"maxPlayers: {dataStorage.getGuildData(ctx.guild, 'maxPlayers')}\n"
+                "Set the maximum players that can fit in a game\n\n"
+                f"preGameTimer: {dataStorage.getGuildData(ctx.guild, 'preGameTimer')}\n"
+                "Sets the amount of time in seconds that it takes for a game "
+                "to start when the game has enough players\n\n"
+                f"votingTime: {dataStorage.getGuildData(ctx.guild, 'votingTime')}\n"
+                "Sets the amount of time in seconds that it takes before "
+                "voting time ends\n\n"
+                f"nightTimeTimer: {dataStorage.getGuildData(ctx.guild, 'nightTimeTimer')}\n"
+                "Sets the amount of time in seconds that it takes for night "
+                "time to end\n\n"
+                "Use !settings <setting> <value> to set a setting\n"
+                "The settings below don't need a value, but they will change "
+                "from 'yes' to 'no' with !settings <setting>\n\n"
+                f"voiceChannel: {voiceChannelValueSting}\n"
+                "Create a voice channel for the game when a game is created\n\n"
+                f"lockVoiceChannelDuringNight: {voiceChannelLockString}\n"
+                "Locks the game's voice channel when it becomes night "
+                "(needs voiceChannel to be set to 'yes')\n\n"
+                f"kickOfflinePlayers: {kickOfflinePlayersString}\n"
+                "Kicks players out of a game when they go offline\n\n\n"
+                "To set permissions, use !permissions and !setPermissions\n"
+                "To change the bot's prefix, use !prefix"
+            )
+            await ctx.send(embed=discord.Embed(
+                title="List of settings",
+                description=settings_desc,
+                color=0x00b8ff
+            ))
         else:
             if setting.lower().strip() == "voicechannel":
                 if dataStorage.getGuildData(ctx.guild, "gameVoiceChannel", default=False):
-                    dataStorage.setGuildData(ctx.guild, "gameVoiceChannel", value=False)
+                    dataStorage.setGuildData(
+                        ctx.guild, "gameVoiceChannel", value=False
+                    )
                     await ctx.send(embed=discord.Embed(
-                        title=":white_check_mark: The bot will no longer make a voice channel for a game when the game is created!",
-                        color=0x00ff00))
+                        title=(
+                            ":white_check_mark: The bot will no longer make "
+                            "a voice channel for a game when the game is "
+                            "created!"
+                        ),
+                        color=0x00ff00
+                    ))
                 else:
-                    dataStorage.setGuildData(ctx.guild, "gameVoiceChannel", value=True)
+                    dataStorage.setGuildData(
+                        ctx.guild, "gameVoiceChannel", value=True
+                    )
                     await ctx.send(embed=discord.Embed(
-                        title=":white_check_mark: The bot will now make a voice channel for a game when the game is created!",
-                        color=0x00ff00))
+                        title=(
+                            ":white_check_mark: The bot will now make a "
+                            "voice channel for a game when the game is "
+                            "created!"
+                        ),
+                        color=0x00ff00
+                    ))
 
             elif setting.lower().strip() == "lockvoicechannelduringnight":
-                if ctx.guild.get_member(client.user.id).guild_permissions.move_members:
-                    if dataStorage.getGuildData(ctx.guild, "lockVoiceChannelDuringNight", default=False):
-                        dataStorage.setGuildData(ctx.guild, "lockVoiceChannelDuringNight", value=False)
+                bot_member = ctx.guild.get_member(client.user.id)
+                if bot_member.guild_permissions.move_members:
+                    if dataStorage.getGuildData(
+                        ctx.guild, "lockVoiceChannelDuringNight", default=False
+                    ):
+                        dataStorage.setGuildData(
+                            ctx.guild,
+                            "lockVoiceChannelDuringNight",
+                            value=False
+                        )
                         await ctx.send(embed=discord.Embed(
-                            title=":white_check_mark: The bot will no longer lock the game's voice channel during the night!",
-                            color=0x00ff00))
+                            title=(
+                                ":white_check_mark: The bot will no longer "
+                                "lock the game's voice channel during the "
+                                "night!"
+                            ),
+                            color=0x00ff00
+                        ))
                     else:
-                        dataStorage.setGuildData(ctx.guild, "lockVoiceChannelDuringNight", value=True)
+                        dataStorage.setGuildData(
+                            ctx.guild,
+                            "lockVoiceChannelDuringNight",
+                            value=True
+                        )
                         await ctx.send(embed=discord.Embed(
-                            title=":white_check_mark: The bot will now lock the game's voice channel during the night!",
-                            color=0x00ff00))
+                            title=(
+                                ":white_check_mark: The bot will now lock "
+                                "the game's voice channel during the night!"
+                            ),
+                            color=0x00ff00
+                        ))
                 else:
-                    await ctx.send(embed=discord.Embed(title=":x: This setting requires the permission 'move members'.", description="Please add the permission 'move members' to the bot's role in your server's settings", color=0xff0000))
+                    await ctx.send(embed=discord.Embed(
+                        title=(
+                            ":x: This setting requires the permission "
+                            "'move members'."
+                        ),
+                        description=(
+                            "Please add the permission 'move members' to the "
+                            "bot's role in your server's settings"
+                        ),
+                        color=0xff0000
+                    ))
 
             elif setting.lower().strip() == "kickofflineplayers":
                 # Toggle, using default False (allow offline by default)
-                if dataStorage.getGuildData(ctx.guild, "kickOfflinePlayers", default=False):
-                    dataStorage.setGuildData(ctx.guild, "kickOfflinePlayers", value=False)
+                if dataStorage.getGuildData(
+                    ctx.guild, "kickOfflinePlayers", default=False
+                ):
+                    dataStorage.setGuildData(
+                        ctx.guild, "kickOfflinePlayers", value=False
+                    )
                     await ctx.send(embed=discord.Embed(
-                        title=":white_check_mark: Offline players will no longer be kicked!",
-                        color=0x00ff00))
+                        title=(
+                            ":white_check_mark: Offline players will no "
+                            "longer be kicked!"
+                        ),
+                        color=0x00ff00
+                    ))
                 else:
-                    dataStorage.setGuildData(ctx.guild, "kickOfflinePlayers", value=True)
+                    dataStorage.setGuildData(
+                        ctx.guild, "kickOfflinePlayers", value=True
+                    )
                     await ctx.send(embed=discord.Embed(
-                        title=":white_check_mark: Offline players will now be kicked!",
-                        color=0x00ff00))
+                        title=(
+                            ":white_check_mark: Offline players will now "
+                            "be kicked!"
+                        ),
+                        color=0x00ff00
+                    ))
 
 
             else:
@@ -2557,75 +3851,171 @@ async def settings(ctx, setting=None, value=None):
                 else:
                     if setting.lower().strip() == "minplayers":
                         if intSetting >= 4:
-                            if intSetting < dataStorage.getGuildData(ctx.guild, "maxPlayers"):
-                                dataStorage.setGuildData(ctx.guild, "minPlayers", value=intSetting)
-                                await ctx.send(f":white_check_mark: The setting minPlayers has been set to {intSetting}")
+                            max_players = dataStorage.getGuildData(
+                                ctx.guild, "maxPlayers"
+                            )
+                            if intSetting < max_players:
+                                dataStorage.setGuildData(
+                                    ctx.guild, "minPlayers", value=intSetting
+                                )
+                                await ctx.send(
+                                    f":white_check_mark: The setting "
+                                    f"minPlayers has been set to {intSetting}"
+                                )
                             else:
-                                await ctx.send(":x: This setting must be lower than the setting 'maxPlayers'!")
+                                await ctx.send(
+                                    ":x: This setting must be lower than the "
+                                    "setting 'maxPlayers'!"
+                                )
                         else:
-                            await ctx.send(":x: This setting can't be lower than 4!")
+                            await ctx.send(
+                                ":x: This setting can't be lower than 4!"
+                            )
                     elif setting.lower().strip() == "maxplayers":
                         if intSetting >= 4:
-                            if intSetting > dataStorage.getGuildData(ctx.guild, "minPlayers"):
-                                dataStorage.setGuildData(ctx.guild, "maxPlayers", value=intSetting)
-                                await ctx.send(f":white_check_mark: The setting maxPlayers has been set to {intSetting}")
+                            min_players = dataStorage.getGuildData(
+                                ctx.guild, "minPlayers"
+                            )
+                            if intSetting > min_players:
+                                dataStorage.setGuildData(
+                                    ctx.guild, "maxPlayers", value=intSetting
+                                )
+                                await ctx.send(
+                                    f":white_check_mark: The setting "
+                                    f"maxPlayers has been set to {intSetting}"
+                                )
                             else:
-                                await ctx.send(":x: This setting must be higher than the setting 'minPlayers'!")
+                                await ctx.send(
+                                    ":x: This setting must be higher than "
+                                    "the setting 'minPlayers'!"
+                                )
                         else:
-                            await ctx.send(":x: This setting can't be lower than 4!")
+                            await ctx.send(
+                                ":x: This setting can't be lower than 4!"
+                            )
                     elif setting.lower().strip() == "pregametimer":
                         if intSetting >= 5:
-                            dataStorage.setGuildData(ctx.guild, "preGameTimer", value=intSetting)
-                            await ctx.send(f":white_check_mark: The setting preGameTimer has been set to {intSetting}")
+                            dataStorage.setGuildData(
+                                ctx.guild, "preGameTimer", value=intSetting
+                            )
+                            await ctx.send(
+                                f":white_check_mark: The setting preGameTimer "
+                                f"has been set to {intSetting}"
+                            )
                         else:
-                            await ctx.send(":x: This setting must be higher than 5!")
+                            await ctx.send(
+                                ":x: This setting must be higher than 5!"
+                            )
                     elif setting.lower().strip() == "votingtime":
                         if intSetting >= 5:
-                            dataStorage.setGuildData(ctx.guild, "votingTime", value=intSetting)
-                            await ctx.send(f":white_check_mark: The setting votingTime has been set to {intSetting}")
+                            dataStorage.setGuildData(
+                                ctx.guild, "votingTime", value=intSetting
+                            )
+                            await ctx.send(
+                                f":white_check_mark: The setting votingTime "
+                                f"has been set to {intSetting}"
+                            )
                         else:
-                            await ctx.send(":x: This setting must be higher than 5!")
+                            await ctx.send(
+                                ":x: This setting must be higher than 5!"
+                            )
                     elif setting.lower().strip() == "nighttimetimer":
                         if intSetting >= 5:
-                            dataStorage.setGuildData(ctx.guild, "nightTimeTimer", value=intSetting)
-                            await ctx.send(f":white_check_mark: The setting nightTimeTimer has been set to {intSetting}")
+                            dataStorage.setGuildData(
+                                ctx.guild, "nightTimeTimer", value=intSetting
+                            )
+                            await ctx.send(
+                                f":white_check_mark: The setting "
+                                f"nightTimeTimer has been set to {intSetting}"
+                            )
                         else:
-                            await ctx.send(":x: This setting must be higher than 5!")
+                            await ctx.send(
+                                ":x: This setting must be higher than 5!"
+                            )
                     else:
+                        prefix_val = dataStorage.getGuildData(
+                            ctx.guild, 'prefix', default='!'
+                        )
                         await ctx.send(
-                            f":x: '{setting}' is not a valid setting! Use {dataStorage.getGuildData(ctx.guild, 'prefix', default='!')}settings to see a list of all settings")
+                            f":x: '{setting}' is not a valid setting! Use "
+                            f"{prefix_val}settings to see a list of all "
+                            f"settings"
+                        )
 
 
 @client.command(aliases=["prefixes", "setPrefix", "changePrefix", "getPrefix"])
 async def prefix(ctx, newValue=None):
     if newValue is None:
+        current_prefix = dataStorage.getGuildData(
+            ctx.guild, 'prefix', default='!'
+        )
         await ctx.send(
-            f"My current prefix for this server is: {dataStorage.getGuildData(ctx.guild, 'prefix', default='!')}")
+            f"My current prefix for this server is: {current_prefix}"
+        )
     else:
         if permissions.memberHasPermission(ctx.author, "admin.prefix"):
             if 7 >= len(str(newValue).strip().lower()) > 0:
-                dataStorage.setGuildData(ctx.guild, "prefix", value=str(newValue).strip().lower())
-                await ctx.send(f":white_check_mark: My prefix has been set to '{str(newValue).strip().lower()}'")
+                new_prefix = str(newValue).strip().lower()
+                dataStorage.setGuildData(
+                    ctx.guild, "prefix", value=new_prefix
+                )
+                await ctx.send(
+                    f":white_check_mark: My prefix has been set to "
+                    f"'{new_prefix}'"
+                )
             else:
-                await ctx.send(":x: The prefix can't be bigger than 7 characters!")
+                await ctx.send(
+                    ":x: The prefix can't be bigger than 7 characters!"
+                )
         else:
-            await ctx.send(embed=discord.Embed(title=":closed_lock_with_key: You don't have permission to do that!",
-                                               description=f"You're missing the following permission: admin.prefix\n\nIf you think you're supposed to have this permission, then ask an admin to execute the following command:\n!addPermission {ctx.author.mention} {permission}",
-                                               color=0xff0000))
+            await ctx.send(embed=discord.Embed(
+                title=(
+                    ":closed_lock_with_key: You don't have permission to "
+                    "do that!"
+                ),
+                description=(
+                    "You're missing the following permission: admin.prefix"
+                    f"\n\nIf you think you're supposed to have this "
+                    f"permission, then ask an admin to execute the "
+                    f"following command:\n!addPermission {ctx.author.mention} "
+                    f"{permission}"
+                ),
+                color=0xff0000
+            ))
 
 
 @client.command()
 async def sendNotificationMessage(ctx):
     if ctx.guild == mainGuild:
         if ctx.message.author.guild_permissions.administrator:
-            embed = discord.Embed(title="Notification settings",
-                                  description="Here you can change what notifications you want. React the corresponding emojis to what notifications you want.",
-                                  color=0x00b8ff)
-            embed.add_field(name=":one: Bot updates", value="Get notified whenever the bot updates", inline=False)
-            embed.add_field(name=":two: New games", value="Get notified whenever a new game is created", inline=False)
-            embed.add_field(name=":three: Games starting",
-                            value="Get notified whenever a new game is about to start (so when there are enough players to start and the countdown to starting begins)",
-                            inline=False)
+            embed = discord.Embed(
+                title="Notification settings",
+                description=(
+                    "Here you can change what notifications you want. "
+                    "React the corresponding emojis to what notifications "
+                    "you want."
+                ),
+                color=0x00b8ff
+            )
+            embed.add_field(
+                name=":one: Bot updates",
+                value="Get notified whenever the bot updates",
+                inline=False
+            )
+            embed.add_field(
+                name=":two: New games",
+                value="Get notified whenever a new game is created",
+                inline=False
+            )
+            embed.add_field(
+                name=":three: Games starting",
+                value=(
+                    "Get notified whenever a new game is about to start "
+                    "(so when there are enough players to start and the "
+                    "countdown to starting begins)"
+                ),
+                inline=False
+            )
             message = await notificationSettingsChannel.send(embed=embed)
             # NOTE: in some editors these might appear like normal numbers, but these are actually emojis.
             await message.add_reaction("1️⃣")
@@ -2714,7 +4104,8 @@ async def get_data_from_result_embeds(ctx):
 
 @client.command()
 async def get_player_data(ctx, member: discord.Member, key):
-    if await permissions.hasPermission(ctx, "debug.dataStorage.get_player_data"):
+    perm = "debug.dataStorage.get_player_data"
+    if await permissions.hasPermission(ctx, perm):
         value = getPlayerData(member, key)
         await ctx.send(f"{value}")
 
@@ -2761,11 +4152,17 @@ async def on_ready():
         notificationMessageFile = None
         try:
             notificationMessageFile = open("notificationMessageID", "r")
-            notificationMessage = await notificationSettingsChannel.fetch_message(int(notificationMessageFile.read()))
+            msg_id = int(notificationMessageFile.read())
+            notificationMessage = await notificationSettingsChannel.fetch_message(
+                msg_id
+            )
         except FileNotFoundError:
             print(
-                "Notification message ID file not found. If you are not running this bot on the main murder mystery server, then please ignore this.")
-        except:
+                "Notification message ID file not found. If you are not "
+                "running this bot on the main murder mystery server, then "
+                "please ignore this."
+            )
+        except Exception:
             raise
         finally:
             if notificationMessageFile is not None:
@@ -2784,7 +4181,12 @@ async def on_ready():
     except Exception as e:
         print(f"Failed to sync app commands: {e}")
 
-    await client.change_presence(status=discord.Status.online, activity=discord.Game(f"!help | !setup | {shortMainServerInvite}"))
+    await client.change_presence(
+        status=discord.Status.online,
+        activity=discord.Game(
+            f"!help | !setup | {shortMainServerInvite}"
+        )
+    )
 
 
 # Slash commands
@@ -2853,13 +4255,23 @@ async def slash_create(interaction: discord.Interaction, debug: bool = False):
     # Disallow creating while already in a lobby
     existing_player = getPlayer(interaction.user, interaction.guild)
     if existing_player is not None and existing_player.inGame:
-        await interaction.response.send_message(":x: You're already in a lobby. Leave it before creating a new one (use !leave).", ephemeral=True)
+        await interaction.response.send_message(
+            ":x: You're already in a lobby. Leave it before creating a "
+            "new one (use !leave).",
+            ephemeral=True
+        )
         return
     # Respect debug flag permission
     if debug and not has_debug_create:
-        await interaction.response.send_message(":closed_lock_with_key: You need debug permissions to create a debug lobby.", ephemeral=True)
+        await interaction.response.send_message(
+            ":closed_lock_with_key: You need debug permissions to create "
+            "a debug lobby.",
+            ephemeral=True
+        )
         return
-    game = await createNewGame(interaction.guild, debug and has_debug_create, reason="slash-create")
+    game = await createNewGame(
+        interaction.guild, debug and has_debug_create, reason="slash-create"
+    )
     game.owner_id = interaction.user.id
     # Add creator to the lobby
     try:
@@ -2867,24 +4279,53 @@ async def slash_create(interaction: discord.Interaction, debug: bool = False):
     except Exception:
         pass
     idx = currentGames[interaction.guild.id].index(game)
-    await interaction.response.send_message(f":white_check_mark: Lobby created! ID: {idx}. You've been added to this lobby. Share this ID for others to join with {dataStorage.getGuildData(interaction.guild, 'prefix', default='!')}join {idx}", ephemeral=True)
+    prefix_val = dataStorage.getGuildData(
+        interaction.guild, 'prefix', default='!'
+    )
+    await interaction.response.send_message(
+        f":white_check_mark: Lobby created! ID: {idx}. You've been added "
+        f"to this lobby. Share this ID for others to join with "
+        f"{prefix_val}join {idx}",
+        ephemeral=True
+    )
 
 @client.tree.command(name="list", description="List current lobbies")
 async def slash_list(interaction: discord.Interaction):
     if not _mark_handled(interaction):
         return
     if not permissions.memberHasPermission(interaction.user, "member.list"):
-        await interaction.response.send_message(":closed_lock_with_key: You don't have permission to list lobbies.", ephemeral=True)
+        await interaction.response.send_message(
+            ":closed_lock_with_key: You don't have permission to list "
+            "lobbies.",
+            ephemeral=True
+        )
         return
-    embed = discord.Embed(title="Currently running games",
-                          description=f"Use {dataStorage.getGuildData(interaction.guild, 'prefix', default='!')}join <ID> to join a lobby that hasn't started yet.\nUse spectate <ID> to watch a game.",
-                          color=0x0088ff)
+    prefix_val = dataStorage.getGuildData(
+        interaction.guild, 'prefix', default='!'
+    )
+    embed = discord.Embed(
+        title="Currently running games",
+        description=(
+            f"Use {prefix_val}join <ID> to join a lobby that hasn't "
+            f"started yet.\nUse spectate <ID> to watch a game."
+        ),
+        color=0x0088ff
+    )
     if interaction.guild.id not in currentGames:
         currentGames[interaction.guild.id] = []
     for game in currentGames[interaction.guild.id]:
-        playerList = "".join([str(p.member.mention) for p in game.players]) or "There are no players in this game"
-        embed.add_field(name=f"ID: {currentGames[interaction.guild.id].index(game)}",
-                        value=f"Started: {game.started}, day {game.day}, players: {playerList}")
+        player_mentions = "".join(
+            [str(p.member.mention) for p in game.players]
+        )
+        playerList = player_mentions or "There are no players in this game"
+        game_idx = currentGames[interaction.guild.id].index(game)
+        embed.add_field(
+            name=f"ID: {game_idx}",
+            value=(
+                f"Started: {game.started}, day {game.day}, "
+                f"players: {playerList}"
+            )
+        )
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @client.tree.command(name="join", description="Join a lobby by ID")
@@ -2892,12 +4333,19 @@ async def slash_join(interaction: discord.Interaction, lobby_id: int):
     if not _mark_handled(interaction):
         return
     if not permissions.memberHasPermission(interaction.user, "member.join"):
-        await interaction.response.send_message(":closed_lock_with_key: You don't have permission to join.", ephemeral=True)
+        await interaction.response.send_message(
+            ":closed_lock_with_key: You don't have permission to join.",
+            ephemeral=True
+        )
         return
     # Prevent joining another lobby if already in one
     existing_player = getPlayer(interaction.user, interaction.guild)
     if existing_player is not None and existing_player.inGame:
-        await interaction.response.send_message(":x: You're already in a lobby. Leave it before joining another one (use !leave).", ephemeral=True)
+        await interaction.response.send_message(
+            ":x: You're already in a lobby. Leave it before joining "
+            "another one (use !leave).",
+            ephemeral=True
+        )
         return
     guild = interaction.guild
     if guild.id not in currentGames:
@@ -2905,30 +4353,52 @@ async def slash_join(interaction: discord.Interaction, lobby_id: int):
     if 0 <= lobby_id < len(currentGames[guild.id]):
         game_to_join = currentGames[guild.id][lobby_id]
         if game_to_join.started:
-            await interaction.response.send_message(":x: This lobby has already started.", ephemeral=True)
+            await interaction.response.send_message(
+                ":x: This lobby has already started.", ephemeral=True
+            )
             return
-        if len(game_to_join.players) >= dataStorage.getGuildData(guild, "maxPlayers", default=30):
-            await interaction.response.send_message(":x: This lobby is full.", ephemeral=True)
+        max_players = dataStorage.getGuildData(
+            guild, "maxPlayers", default=30
+        )
+        if len(game_to_join.players) >= max_players:
+            await interaction.response.send_message(
+                ":x: This lobby is full.", ephemeral=True
+            )
             return
         await game_to_join.addPlayer(interaction.user)
-        await interaction.response.send_message(f":white_check_mark: Joined lobby {lobby_id}.", ephemeral=True)
+        await interaction.response.send_message(
+            f":white_check_mark: Joined lobby {lobby_id}.", ephemeral=True
+        )
     else:
-        await interaction.response.send_message(":x: Lobby not found.", ephemeral=True)
+        await interaction.response.send_message(
+            ":x: Lobby not found.", ephemeral=True
+        )
 
 @client.tree.command(name="spectate", description="Spectate a game by ID")
 async def slash_spectate(interaction: discord.Interaction, lobby_id: int):
     if not _mark_handled(interaction):
         return
-    if not permissions.memberHasPermission(interaction.user, "member.spectate"):
-        await interaction.response.send_message(":closed_lock_with_key: You don't have permission to spectate.", ephemeral=True)
+    perm = "member.spectate"
+    if not permissions.memberHasPermission(interaction.user, perm):
+        await interaction.response.send_message(
+            ":closed_lock_with_key: You don't have permission to spectate.",
+            ephemeral=True
+        )
         return
     if interaction.guild.id not in currentGames:
         currentGames[interaction.guild.id] = []
     if 0 <= lobby_id < len(currentGames[interaction.guild.id]):
-        await currentGames[interaction.guild.id][lobby_id].addSpectator(interaction.user)
-        await interaction.response.send_message(f":white_check_mark: Spectating lobby {lobby_id}.", ephemeral=True)
+        await currentGames[interaction.guild.id][lobby_id].addSpectator(
+            interaction.user
+        )
+        await interaction.response.send_message(
+            f":white_check_mark: Spectating lobby {lobby_id}.",
+            ephemeral=True
+        )
     else:
-        await interaction.response.send_message(":x: Lobby not found.", ephemeral=True)
+        await interaction.response.send_message(
+            ":x: Lobby not found.", ephemeral=True
+        )
 
 
 def getLen(x):
@@ -2947,13 +4417,40 @@ async def stats(ctx, memberArg: discord.Member = None):
         else:
             member = memberArg
 
-        embed = discord.Embed(title=f"Stats for {member.display_name}",
-                              description=f""":video_game: Games played: {getPlayerData(member, "gamesPlayed", default=0)}\n\n:adult: Villager wins: {getPlayerData(member, "villagerWins", default=0)}\n:dagger: Murderer wins: {getPlayerData(member, "murdererWins", default=0)}\n:clown: Fool wins: {getPlayerData(member, "foolWins", default=0)}\n:wolf: Werewolf wins: {getPlayerData(member, "werewolfWins", default=0)}\n""",
-                              color=0x00ff00)
+        games_played = getPlayerData(member, "gamesPlayed", default=0)
+        villager_wins = getPlayerData(member, "villagerWins", default=0)
+        murderer_wins = getPlayerData(member, "murdererWins", default=0)
+        fool_wins = getPlayerData(member, "foolWins", default=0)
+        werewolf_wins = getPlayerData(member, "werewolfWins", default=0)
+        stats_desc = (
+            f":video_game: Games played: {games_played}\n\n"
+            f":adult: Villager wins: {villager_wins}\n"
+            f":dagger: Murderer wins: {murderer_wins}\n"
+            f":clown: Fool wins: {fool_wins}\n"
+            f":wolf: Werewolf wins: {werewolf_wins}\n"
+        )
+        embed = discord.Embed(
+            title=f"Stats for {member.display_name}",
+            description=stats_desc,
+            color=0x00ff00
+        )
         embed.set_thumbnail(url=member.avatar_url)
-        embed.add_field(name=f'Level {dataStorage.getPlayerData(member, "level", default=1)}',
-                        value=f'{objectives.getXpProgressBar(member)}\n{objectives.getNextLevelRequirement(getPlayerData(member, "level", default=1)) - getPlayerData(member, "xp", default=0)} xp required for next level',
-                        inline=True)
+        player_level = dataStorage.getPlayerData(
+            member, "level", default=1
+        )
+        current_xp = getPlayerData(member, "xp", default=0)
+        next_level_req = objectives.getNextLevelRequirement(
+            getPlayerData(member, "level", default=1)
+        )
+        xp_needed = next_level_req - current_xp
+        embed.add_field(
+            name=f'Level {player_level}',
+            value=(
+                f'{objectives.getXpProgressBar(member)}\n'
+                f'{xp_needed} xp required for next level'
+            ),
+            inline=True
+        )
         await ctx.send(embed=embed)
         await objectives.addXP(member, 0)
 
@@ -2970,8 +4467,9 @@ async def on_raw_reaction_add(payload):
             if member.id == dataStorage.getGuildData(guild, "setupMember"):
                 await setup.processSetupReaction(member, channel, payload.emoji)
 
-        # Only handle notification reactions if the notification message is known
-        if notificationMessage is not None and message.id == getattr(notificationMessage, "id", None):
+        # Only handle notification reactions if notification message known
+        notification_id = getattr(notificationMessage, "id", None)
+        if notificationMessage is not None and message.id == notification_id:
             # NOTE: in some editors these might appear like normal numbers, but these are actually emojis.
             if payload.emoji.name == "1️⃣":
                 await member.add_roles(botUpdatesRole)
@@ -2990,8 +4488,9 @@ async def on_raw_reaction_remove(payload):
         member = await guild.fetch_member(payload.user_id)
         channel = await client.fetch_channel(payload.channel_id)
         message = await channel.fetch_message(payload.message_id)
-        if notificationMessage is not None and message.id == getattr(notificationMessage, "id", None):
-            # NOTE: in some editors these might appear like normal numbers, but these are actually emojis.
+        notification_id = getattr(notificationMessage, "id", None)
+        if notificationMessage is not None and message.id == notification_id:
+            # NOTE: These might appear like normal numbers but are emojis.
             if payload.emoji.name == "1️⃣":
                 await member.remove_roles(botUpdatesRole)
             elif payload.emoji.name == "2️⃣":
@@ -3023,15 +4522,19 @@ async def purgeInfoChannels(ctx):
 
 @client.command()
 async def addObjectiveProgress(ctx, member, key, value=1):
-    if await permissions.hasPermission(ctx, "debug.levels.addObjectiveProgress"):
+    perm = "debug.levels.addObjectiveProgress"
+    if await permissions.hasPermission(ctx, perm):
         if key in objectives.objectiveTasksMeanings:
             objectives.addObjectiveProgress(member, key, value)
         else:
             tasks = ""
             for v in objectives.objectiveTasksMeanings:
                 tasks += f"\n{v}"
-            await ctx.channel.send(embed=discord.Embed(title=":x: That's not a valid objective task",
-                                                       description=f"Objective task options:{tasks}", color=0xff0000))
+            await ctx.channel.send(embed=discord.Embed(
+                title=":x: That's not a valid objective task",
+                description=f"Objective task options:{tasks}",
+                color=0xff0000
+            ))
 
 
 @client.command(aliases=["objectives", "quest", "quests"])
@@ -3040,27 +4543,53 @@ async def objective(ctx):
         if getPlayer(ctx.author, ctx.message.guild) is None:
             await objectives.objectivesCommand(ctx)
         else:
-            await ctx.send(
-                embed=discord.Embed(title=":x: You can't view your objective progress when you're in a game!",
-                                    description="""Because some objectives, like "vote on the murderer", can reveal someone's role if the progress increases, you can only check your objective progress outside of games.""",
-                                    color=0xff0000))
+            await ctx.send(embed=discord.Embed(
+                title=(
+                    ":x: You can't view your objective progress when "
+                    "you're in a game!"
+                ),
+                description=(
+                    "Because some objectives, like \"vote on the murderer\", "
+                    "can reveal someone's role if the progress increases, "
+                    "you can only check your objective progress outside of "
+                    "games."
+                ),
+                color=0xff0000
+            ))
 
 
 @client.command(aliases=["xp", "levels"])
 async def level(ctx, member: discord.Member = None):
     if await permissions.hasPermission(ctx, "member.levels.level"):
         if member is not None:
+            player_level = getPlayerData(member, "level", default=1)
+            current_xp = getPlayerData(member, "xp", default=0)
+            next_level_req = objectives.getNextLevelRequirement(player_level)
+            xp_needed = next_level_req - current_xp
             embed = discord.Embed(
-                title=f"""{member.display_name} is level {getPlayerData(member, "level", default=1)}""",
-                description=f"""{objectives.getXpProgressBar(member)}\n{objectives.getNextLevelRequirement(getPlayerData(member, "level", default=1)) - getPlayerData(member, "xp", default=0)} xp required for next level""",
-                color=0x00ff00)
+                title=f"{member.display_name} is level {player_level}",
+                description=(
+                    f"{objectives.getXpProgressBar(member)}\n"
+                    f"{xp_needed} xp required for next level"
+                ),
+                color=0x00ff00
+            )
             embed.set_thumbnail(url=member.avatar_url)
             await ctx.send(embed=embed)
             await objectives.addXP(member, 0)
         else:
-            embed = discord.Embed(title=f"""You are level {getPlayerData(ctx.author, "level", default=1)}""",
-                                  description=f"""{objectives.getXpProgressBar(ctx.author)}\n{objectives.getNextLevelRequirement(getPlayerData(ctx.author, "level", default=1)) - getPlayerData(ctx.author, "xp", default=0)} xp required for next level""",
-                                  color=0x00ff00)
+            author_level = getPlayerData(ctx.author, "level", default=1)
+            author_xp = getPlayerData(ctx.author, "xp", default=0)
+            next_req = objectives.getNextLevelRequirement(author_level)
+            xp_needed = next_req - author_xp
+            embed = discord.Embed(
+                title=f"You are level {author_level}",
+                description=(
+                    f"{objectives.getXpProgressBar(ctx.author)}\n"
+                    f"{xp_needed} xp required for next level"
+                ),
+                color=0x00ff00
+            )
             embed.set_thumbnail(url=ctx.author.avatar_url)
             await ctx.send(embed=embed)
             await objectives.addXP(ctx.author, 0)
@@ -3068,7 +4597,8 @@ async def level(ctx, member: discord.Member = None):
 
 @client.command()
 async def addPermission(ctx, arg=None, perm=None):
-    if await permissions.hasPermission(ctx, "admin.permissions.addPermission"):
+    perm_check = "admin.permissions.addPermission"
+    if await permissions.hasPermission(ctx, perm_check):
         if arg is not None and perm is not None:
             member = None
             roleArg = None
@@ -3082,53 +4612,104 @@ async def addPermission(ctx, arg=None, perm=None):
                 except commands.RoleNotFound:
                     await ctx.send(embed=discord.Embed(
                         title=":x: Couldn't find that member or role! correct usage: !removePermission <member/role> <permission>"))
-                except:
+                except Exception:
                     await ctx.message.channel.send(":x: an unknown error occurred!")
                     raise
-            except:
+            except Exception:
                 await ctx.message.channel.send(":x: an unknown error occurred!")
                 raise
             if member is not None:
                 if permissions.isValidPermission(perm):
-                    if not permissions.memberHasPermission(member, perm, bypassRoles=True):
+                    has_perm = permissions.memberHasPermission(
+                        member, perm, bypassRoles=True
+                    )
+                    if not has_perm:
                         permissions.addPermissionToMember(member, perm)
+                        name = member.display_name
                         await ctx.send(embed=discord.Embed(
-                            title=f":white_check_mark: {perm} has been added to {member.display_name}'s permissions",
-                            color=0x00ff00))
+                            title=(
+                                f":white_check_mark: {perm} has been added "
+                                f"to {name}'s permissions"
+                            ),
+                            color=0x00ff00
+                        ))
                     else:
-                        await ctx.send(
-                            embed=discord.Embed(title=f":x: {member.display_name} already has the permission {perm}.",
-                                                description=f"Use !permissions {member.mention} to view their permissions",
-                                                color=0xff0000))
+                        name = member.display_name
+                        await ctx.send(embed=discord.Embed(
+                            title=(
+                                f":x: {name} already has the permission "
+                                f"{perm}."
+                            ),
+                            description=(
+                                f"Use !permissions {member.mention} to view "
+                                "their permissions"
+                            ),
+                            color=0xff0000
+                        ))
                 else:
-                    await ctx.send(embed=discord.Embed(title=f":x: {perm} is not a valid permission.",
-                                                       description="To view a list of all permissions, use !permissions.\n\nExamples of valid permissions:\nadmin.permissions.addPermission\nadmin.*\nadmin.permissions.*\nmember.*\nmember.help\n(* means all permissions in that permission group)",
-                                                       color=0xff0000))
+                    valid_perms_desc = (
+                        "To view a list of all permissions, use "
+                        "!permissions.\n\nExamples of valid permissions:\n"
+                        "admin.permissions.addPermission\nadmin.*\n"
+                        "admin.permissions.*\nmember.*\nmember.help\n"
+                        "(* means all permissions in that permission group)"
+                    )
+                    await ctx.send(embed=discord.Embed(
+                        title=f":x: {perm} is not a valid permission.",
+                        description=valid_perms_desc,
+                        color=0xff0000
+                    ))
             elif roleArg is not None:
                 if permissions.isValidPermission(perm):
                     if not permissions.roleHasPermission(roleArg, perm):
                         permissions.addPermissionToRole(roleArg, perm)
                         await ctx.send(embed=discord.Embed(
-                            title=f""":white_check_mark: {perm} has been added to the permissions "{roleArg}" """,
-                            color=0x00ff00))
+                            title=(
+                                f":white_check_mark: {perm} has been added "
+                                f"to the permissions \"{roleArg}\""
+                            ),
+                            color=0x00ff00
+                        ))
                     else:
-                        await ctx.send(
-                            embed=discord.Embed(title=f":x: the role {roleArg.name} already has the permission {perm}",
-                                                description=f"to view its permissions, do !permissions {roleArg.mention}",
-                                                color=0xff0000))
+                        await ctx.send(embed=discord.Embed(
+                            title=(
+                                f":x: the role {roleArg.name} already has "
+                                f"the permission {perm}"
+                            ),
+                            description=(
+                                f"to view its permissions, do "
+                                f"!permissions {roleArg.mention}"
+                            ),
+                            color=0xff0000
+                        ))
                 else:
-                    await ctx.send(embed=discord.Embed(title=f":x: {perm} is not a valid permission.",
-                                                       description="To view a list of all permissions, use !permissions.\n\nExamples of valid permissions:\nadmin.permissions.addPermission\nadmin.*\nadmin.permissions.*\nmember.*\nmember.help\n(* means all permissions in that permission group)",
-                                                       color=0xff0000))
+                    valid_perms_desc = (
+                        "To view a list of all permissions, use "
+                        "!permissions.\n\nExamples of valid permissions:\n"
+                        "admin.permissions.addPermission\nadmin.*\n"
+                        "admin.permissions.*\nmember.*\nmember.help\n"
+                        "(* means all permissions in that permission group)"
+                    )
+                    await ctx.send(embed=discord.Embed(
+                        title=f":x: {perm} is not a valid permission.",
+                        description=valid_perms_desc,
+                        color=0xff0000
+                    ))
         else:
-            await ctx.send(embed=discord.Embed(title=":x: Incorrect command usage",
-                                               description="correct usage: !addPermission <member> <permission>\nuse !permissions to view a list of permissions",
-                                               color=0xff0000))
+            await ctx.send(embed=discord.Embed(
+                title=":x: Incorrect command usage",
+                description=(
+                    "correct usage: !addPermission <member> <permission>\n"
+                    "use !permissions to view a list of permissions"
+                ),
+                color=0xff0000
+            ))
 
 
 @client.command()
 async def removePermission(ctx, arg=None, perm: str = None):
-    if await permissions.hasPermission(ctx, "admin.permissions.removePermission"):
+    perm_check = "admin.permissions.removePermission"
+    if await permissions.hasPermission(ctx, perm_check):
         if arg is not None and perm is not None:
             member = None
             roleArg = None
@@ -3141,54 +4722,111 @@ async def removePermission(ctx, arg=None, perm: str = None):
                     roleArg = await converter.convert(ctx, arg)
                 except commands.RoleNotFound:
                     await ctx.send(embed=discord.Embed(
-                        title=":x: Couldn't find that member or role! correct usage: !removePermission <member/role> <permission>"))
-                except:
+                        title=(
+                            ":x: Couldn't find that member or role! "
+                            "correct usage: !removePermission "
+                            "<member/role> <permission>"
+                        )
+                    ))
+                except Exception:
                     await ctx.message.channel.send(":x: an unknown error occurred!")
                     raise
-            except:
+            except Exception:
                 await ctx.message.channel.send(":x: an unknown error occurred!")
                 raise
             if member is not None:
                 if permissions.isValidPermission(perm):
-                    if permissions.memberHasPermission(member, perm, bypassRoles=True):
+                    has_perm = permissions.memberHasPermission(
+                        member, perm, bypassRoles=True
+                    )
+                    if has_perm:
                         permissions.removePermissionFromMember(member, perm)
+                        name = member.display_name
                         await ctx.send(embed=discord.Embed(
-                            title=f":white_check_mark: {perm} has been removed from {member.display_name}'s permissions",
-                            color=0x00ff00))
+                            title=(
+                                f":white_check_mark: {perm} has been "
+                                f"removed from {name}'s permissions"
+                            ),
+                            color=0x00ff00
+                        ))
                     else:
-                        await ctx.send(
-                            embed=discord.Embed(title=f":x: {member.display_name} doesn't have the permission {perm}.",
-                                                description=f"Use !permissions {member.mention} to view their permissions",
-                                                color=0xff0000))
+                        name = member.display_name
+                        await ctx.send(embed=discord.Embed(
+                            title=(
+                                f":x: {name} doesn't have the permission "
+                                f"{perm}."
+                            ),
+                            description=(
+                                f"Use !permissions {member.mention} to view "
+                                "their permissions"
+                            ),
+                            color=0xff0000
+                        ))
                 else:
-                    await ctx.send(embed=discord.Embed(title=f":x: {perm} is not a valid permission.",
-                                                       description="To view a list of all permissions, use !permissions.\n\nExamples of valid permissions:\nadmin.permissions.addPermission\nadmin.*\nadmin.permissions.*\nmember.*\nmember.help\n(* means all permissions in that permission group)",
-                                                       color=0xff0000))
+                    valid_perms_desc = (
+                        "To view a list of all permissions, use "
+                        "!permissions.\n\nExamples of valid permissions:\n"
+                        "admin.permissions.addPermission\nadmin.*\n"
+                        "admin.permissions.*\nmember.*\nmember.help\n"
+                        "(* means all permissions in that permission group)"
+                    )
+                    await ctx.send(embed=discord.Embed(
+                        title=f":x: {perm} is not a valid permission.",
+                        description=valid_perms_desc,
+                        color=0xff0000
+                    ))
             elif roleArg is not None:
                 if permissions.isValidPermission(perm):
                     if permissions.roleHasPermission(roleArg, perm):
                         permissions.removePermissionFromRole(roleArg, perm)
                         await ctx.send(embed=discord.Embed(
-                            title=f":white_check_mark: The permissions {perm} has been removed from the role {roleArg.name}",
-                            color=0x00ff00))
+                            title=(
+                                f":white_check_mark: The permissions {perm} "
+                                f"has been removed from the role "
+                                f"{roleArg.name}"
+                            ),
+                            color=0x00ff00
+                        ))
                     else:
-                        await ctx.send(
-                            embed=discord.Embed(title=f":x: The role {roleArg.name} doesn't have the permission {perm}",
-                                                description=f"Use !permissions {roleArg.mention} to view its permissions",
-                                                color=0xff0000))
+                        await ctx.send(embed=discord.Embed(
+                            title=(
+                                f":x: The role {roleArg.name} doesn't have "
+                                f"the permission {perm}"
+                            ),
+                            description=(
+                                f"Use !permissions {roleArg.mention} to view "
+                                "its permissions"
+                            ),
+                            color=0xff0000
+                        ))
                 else:
-                    await ctx.send(embed=discord.Embed(title=f":x: {perm} is not a valid permission.",
-                                                       description="To view a list of all permissions, use !permissions.\n\nExamples of valid permissions:\nadmin.permissions.addPermission\nadmin.*\nadmin.permissions.*\nmember.*\nmember.help\n(* means all permissions in that permission group)",
-                                                       color=0xff0000))
+                    valid_perms_desc = (
+                        "To view a list of all permissions, use "
+                        "!permissions.\n\nExamples of valid permissions:\n"
+                        "admin.permissions.addPermission\nadmin.*\n"
+                        "admin.permissions.*\nmember.*\nmember.help\n"
+                        "(* means all permissions in that permission group)"
+                    )
+                    await ctx.send(embed=discord.Embed(
+                        title=f":x: {perm} is not a valid permission.",
+                        description=valid_perms_desc,
+                        color=0xff0000
+                    ))
         else:
-            await ctx.send(embed=discord.Embed(title=":x: Incorrect command usage",
-                                               description="correct usage: !removePermission <member> <permission>\nuse !permissions to view a list of permissions",
-                                               color=0xff0000))
+            await ctx.send(embed=discord.Embed(
+                title=":x: Incorrect command usage",
+                description=(
+                    "correct usage: !removePermission <member> <permission>\n"
+                    "use !permissions to view a list of permissions"
+                ),
+                color=0xff0000
+            ))
 
 
 @client.command(aliases=["permissions"])
 async def permission(ctx, arg=None):
-    if await permissions.hasPermission(ctx, "admin.permissions.permissions"):
+    perm_check = "admin.permissions.permissions"
+    if await permissions.hasPermission(ctx, perm_check):
         if arg is not None:
             member = None
             roleArg = None
@@ -3201,31 +4839,95 @@ async def permission(ctx, arg=None):
                     roleArg = await converter.convert(ctx, arg)
                 except commands.RoleNotFound:
                     await ctx.send(embed=discord.Embed(
-                        title=":x: Couldn't find that member or role! correct usage: !removePermission <member/role> <permission>"))
-                except:
-                    await ctx.message.channel.send(":x: an unknown error occurred!")
+                        title=(
+                            ":x: Couldn't find that member or role! "
+                            "correct usage: !removePermission "
+                            "<member/role> <permission>"
+                        )
+                    ))
+                except Exception:
+                    await ctx.message.channel.send(
+                        ":x: an unknown error occurred!"
+                    )
                     raise
-            except:
-                await ctx.message.channel.send(":x: an unknown error occurred!")
+            except Exception:
+                await ctx.message.channel.send(
+                    ":x: an unknown error occurred!"
+                )
                 raise
             if member is not None:
-                await ctx.send(embed=discord.Embed(title=f"Permissions of {member.display_name}",
-                                                   description=f"{permissions.getPermissionTree(permissions.getMemberPermissions(member))}\n\nTo add/remove permissions, use !addPermission {member.mention} <permission> or !removePermission {member.mention} <permission>\nUse !permissions to view a full list of permissions\nUse . between permission groups. Use * to select everything in a permission group.\nExamples of valid permissions:\nadmin.permissions.addPermission\nadmin.*\nadmin.permissions.*\nmember.*\nmember.help",
-                                                   color=0x00b8ff))
+                member_perms = permissions.getMemberPermissions(member)
+                perm_tree = permissions.getPermissionTree(member_perms)
+                desc = (
+                    f"{perm_tree}\n\n"
+                    f"To add/remove permissions, use "
+                    f"!addPermission {member.mention} <permission> or "
+                    f"!removePermission {member.mention} <permission>\n"
+                    "Use !permissions to view a full list of permissions\n"
+                    "Use . between permission groups. Use * to select "
+                    "everything in a permission group.\n"
+                    "Examples of valid permissions:\n"
+                    "admin.permissions.addPermission\nadmin.*\n"
+                    "admin.permissions.*\nmember.*\nmember.help"
+                )
+                await ctx.send(embed=discord.Embed(
+                    title=f"Permissions of {member.display_name}",
+                    description=desc,
+                    color=0x00b8ff
+                ))
 
             elif roleArg is not None:
-                await ctx.send(embed=discord.Embed(title=f"""Permissions of "{roleArg.name}" """,
-                                                   description=f"{permissions.getPermissionTree(permissions.getRolePermissions(roleArg))}\n\nTo add/remove permissions, use !addPermission {roleArg.mention} <permission> or !removePermission {roleArg.mention} <permission>\nUse !permissions to view a full list of permissions\nUse . between permission groups. Use * to select everything in a permission group.\nExamples of valid permissions:\nadmin.permissions.addPermission\nadmin.*\nadmin.permissions.*\nmember.*\nmember.help",
-                                                   color=0x00b8ff))
+                role_perms = permissions.getRolePermissions(roleArg)
+                perm_tree = permissions.getPermissionTree(role_perms)
+                desc = (
+                    f"{perm_tree}\n\n"
+                    f"To add/remove permissions, use "
+                    f"!addPermission {roleArg.mention} <permission> or "
+                    f"!removePermission {roleArg.mention} <permission>\n"
+                    "Use !permissions to view a full list of permissions\n"
+                    "Use . between permission groups. Use * to select "
+                    "everything in a permission group.\n"
+                    "Examples of valid permissions:\n"
+                    "admin.permissions.addPermission\nadmin.*\n"
+                    "admin.permissions.*\nmember.*\nmember.help"
+                )
+                await ctx.send(embed=discord.Embed(
+                    title=f"Permissions of \"{roleArg.name}\"",
+                    description=desc,
+                    color=0x00b8ff
+                ))
         else:
-            await ctx.send(embed=discord.Embed(title=f"List of permissions",
-                                               description=f"{permissions.getPermissionTree(permissions.getPermissionList())}\n\nTo add/remove permissions, use !addPermission <player/role> <permission> or !removePermission <player/role> <permission>\nUse . between permission groups. Use * to select everything in a permission group.\nExamples of valid permissions:\nadmin.permissions.addPermission\nadmin.*\nadmin.permissions.*\nmember.*\nmember.help",
-                                               color=0x00b8ff))
+            perm_list = permissions.getPermissionList()
+            perm_tree = permissions.getPermissionTree(perm_list)
+            desc = (
+                f"{perm_tree}\n\n"
+                "To add/remove permissions, use "
+                "!addPermission <player/role> <permission> or "
+                "!removePermission <player/role> <permission>\n"
+                "Use . between permission groups. Use * to select "
+                "everything in a permission group.\n"
+                "Examples of valid permissions:\n"
+                "admin.permissions.addPermission\nadmin.*\n"
+                "admin.permissions.*\nmember.*\nmember.help"
+            )
+            await ctx.send(embed=discord.Embed(
+                title="List of permissions",
+                description=desc,
+                color=0x00b8ff
+            ))
 
 
 @client.command()
 async def invite(ctx):
-    await ctx.send(embed=discord.Embed(title="Invite Murder Mystery to your own server!", description="Click this link to invite this bot to your server: https://discord.com/api/oauth2/authorize?client_id=590980247801954304&permissions=2434133072&scope=bot", color=0x00b8ff))
+    invite_url = (
+        "https://discord.com/api/oauth2/authorize?"
+        "client_id=590980247801954304&permissions=2434133072&scope=bot"
+    )
+    await ctx.send(embed=discord.Embed(
+        title="Invite Murder Mystery to your own server!",
+        description=f"Click this link to invite this bot to your server: {invite_url}",
+        color=0x00b8ff
+    ))
 @client.command()
 async def error(ctx):
     int("e")
@@ -3234,8 +4936,11 @@ async def error(ctx):
 logger = logging.getLogger('discord')
 logger.setLevel(logging.INFO)
 log_path = os.path.join(os.path.dirname(__file__), 'log.log')
-handler = logging.FileHandler(filename=log_path, encoding='utf-8', mode='w')
-handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
+handler = logging.FileHandler(
+    filename=log_path, encoding='utf-8', mode='w'
+)
+log_format = '%(asctime)s:%(levelname)s:%(name)s: %(message)s'
+handler.setFormatter(logging.Formatter(log_format))
 logger.addHandler(handler)
 
 # get the token securely: prefer environment variable, fallback to token.txt near this file
