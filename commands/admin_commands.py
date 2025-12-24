@@ -47,19 +47,37 @@ class AdminCommands(commands.Cog):
 
     @commands.command()
     async def startGame(self, ctx, indexStr):
-        """Admin: Force start a game countdown."""
-        if not await permissions.hasPermission(ctx, "admin.game.startGame"):
+        """Start a lobby immediately. Allowed for lobby owner or admins."""
+        # parse index
+        try:
+            index = int(indexStr)
+        except ValueError:
+            await ctx.send(":x: Please provide a numeric lobby ID.")
             return
-            
-        index = int(indexStr)
-        if index <= len(currentGames.get(ctx.guild.id, [])) - 1:
-            currentGames[ctx.guild.id][index].startNow = True
-            await ctx.send(
-                f"Game with index **{indexStr}** should start now if it was "
-                "in a countdown, or will skip the countdown once it starts!"
-            )
-        else:
+
+        games = currentGames.get(ctx.guild.id, [])
+        if not (0 <= index < len(games)):
             await ctx.send(":x: There's no game with that ID! Use !list to view all games.")
+            return
+
+        game = games[index]
+        is_owner = getattr(game, "owner_id", None) == ctx.author.id
+        has_admin = await permissions.hasPermission(ctx, "admin.game.startGame")
+
+        if not (is_owner or has_admin):
+            await ctx.send(
+                ":closed_lock_with_key: Only the lobby owner or an admin can start this game."
+            )
+            return
+
+        if game.started:
+            await ctx.send(":x: This lobby has already started.")
+            return
+
+        game.startNow = True
+        await ctx.send(
+            f":white_check_mark: Game {indexStr} will start now or skip the countdown if it begins."
+        )
 
     @commands.command(aliases=["endGames", "endAllGames", "stopGames", "stopAllGames"])
     async def cleanup(self, ctx):

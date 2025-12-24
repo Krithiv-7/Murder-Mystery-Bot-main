@@ -7,6 +7,7 @@ from discord.utils import get
 import random
 import datetime
 import logging
+from aiohttp import ClientOSError
 import traceback as tb
 
 # script imports
@@ -20,6 +21,7 @@ from dataStorage import (
 import objectives
 import permissions
 import setup
+from commands import setup_cogs
 
 # Import shared state from core modules
 from core.game_state import currentGames, availableGames, allPlayers
@@ -58,6 +60,12 @@ client = commands.Bot(
     intents=intents,
     case_insensitive=True
 )
+
+
+@client.event
+async def setup_hook():
+    """Load command cogs at startup to keep bot.py slim."""
+    await setup_cogs(client)
 
 # Note: requiredRoles, roles, mainServerInvite, etc.
 # are now imported from core.config
@@ -703,10 +711,10 @@ class game:
                         "role's channel will be accessible."
                     )
                 )
-            await player.nightChannel.send(embed=embed)
+            await self.safe_send(player.nightChannel, embed=embed)
 
             if self.day == 0:
-                await player.nightChannel.send(embed=player.role.revealEmbed)
+                await self.safe_send(player.nightChannel, embed=player.role.revealEmbed)
 
         if self.day == 0:
             if self.findRole("werewolf") is not None:
@@ -727,7 +735,7 @@ class game:
                     ),
                     color=0xffda83
                 )
-                await murderer.nightChannel.send(embed=embed1)
+                await self.safe_send(murderer.nightChannel, embed=embed1)
                 embed2 = discord.Embed(
                     title=(
                         f":dagger: {murderer_name} is the murderer, "
@@ -741,7 +749,7 @@ class game:
                     ),
                     color=0xa80700
                 )
-                await werewolf.nightChannel.send(embed=embed2)
+                await self.safe_send(werewolf.nightChannel, embed=embed2)
 
         for player in self.players:
 
@@ -755,7 +763,7 @@ class game:
                     ),
                     color=0x00ff00
                 )
-                await player.nightChannel.send(embed=embed)
+                await self.safe_send(player.nightChannel, embed=embed)
 
             if self.weatherIntensity > 60 and self.weatherIntensity <= 80:
                 num = random.randint(1, 10)
@@ -776,7 +784,7 @@ class game:
                         description="Lucky you!",
                         color=0x00ff00
                     )
-                    await player.nightChannel.send(embed=embed)
+                    await self.safe_send(player.nightChannel, embed=embed)
 
             if hasattr(player, "roleChannel"):
                 if not hasattr(player.role, "unlockRoleChannelAtNightTime"):
@@ -879,21 +887,21 @@ class game:
                         title=":first_quarter_moon: The sun is about to rise!",
                         description="The sun will rise in 30 seconds."
                     )
-                    await player.nightChannel.send(embed=embed)
+                    await self.safe_send(player.nightChannel, embed=embed)
             elif count == 15:
                 for player in self.players:
                     embed = discord.Embed(
                         title=":waxing_crescent_moon: The sun is about to rise!",
                         description="The sun will rise in 15 seconds."
                     )
-                    await player.nightChannel.send(embed=embed)
+                    await self.safe_send(player.nightChannel, embed=embed)
             elif count == 10:
                 for player in self.players:
                     embed = discord.Embed(
                         title=":sunrise_over_mountains: The sun is about to rise!",
                         description="The sun will rise in 5 seconds."
                     )
-                    await player.nightChannel.send(embed=embed)
+                    await self.safe_send(player.nightChannel, embed=embed)
 
             await asyncio.sleep(1)
             count -= 1
@@ -1411,19 +1419,37 @@ class game:
             await asyncio.sleep(5)
             await self.makeNightTime()
 
+    async def safe_send(self, channel, *args, **kwargs):
+        retries = kwargs.pop("retries", 1)
+        delay = kwargs.pop("delay", 1)
+        for attempt in range(retries + 1):
+            try:
+                return await channel.send(*args, **kwargs)
+            except (ClientOSError, ConnectionResetError, OSError, asyncio.TimeoutError) as exc:
+                if attempt >= retries:
+                    print(f"Send failed to channel {getattr(channel, 'id', 'unknown')}: {exc}")
+                    return None
+                await asyncio.sleep(delay)
+            except discord.HTTPException as exc:
+                if attempt >= retries:
+                    print(f"HTTP send failed to channel {getattr(channel, 'id', 'unknown')}: {exc}")
+                    return None
+                await asyncio.sleep(delay)
+        return None
+
     async def sendToAllNightChannels(self, **kwargs):
         if self.nightTime:
             if "msg" in kwargs:
                 if "embed" in kwargs:
                     for plr in self.players:
-                        await plr.nightChannel.send(kwargs["msg"], embed=kwargs["embed"])
+                        await self.safe_send(plr.nightChannel, kwargs["msg"], embed=kwargs["embed"])
                 else:
                     for plr in self.players:
-                        await plr.nightChannel.send(kwargs["msg"])
+                        await self.safe_send(plr.nightChannel, kwargs["msg"])
 
             elif "embed" in kwargs:
                 for plr in self.players:
-                    await plr.nightChannel.send(embed=kwargs["embed"])
+                    await self.safe_send(plr.nightChannel, embed=kwargs["embed"])
 
     # returns a list of players excluding a certain player
     def getPlayersListExcluding(self, arg):
@@ -2298,14 +2324,36 @@ async def resetState(ctx):
 
 @client.command()
 async def startGame(ctx, indexStr):
-    if await permissions.hasPermission(ctx, "admin.game.startGame"):
+    """Start a lobby immediately. Allowed for lobby owner or admins."""
+    # Validate lobby index
+    try:
         index = int(indexStr)
-        if index <= len(currentGames[ctx.guild.id]) - 1:
-            currentGames[ctx.guild.id][index].startNow = True
-            await ctx.send(
-                f"Game with index **{indexStr}** should start now if it was in a countdown, or will skip the countdown once it starts counting down!")
-        else:
-            await ctx.send(":x: There's no game with that ID! use !list to view all games.")
+    except ValueError:
+        await ctx.send(":x: Please provide a numeric lobby ID.")
+        return
+
+    if ctx.guild.id not in currentGames or index >= len(currentGames[ctx.guild.id]) or index < 0:
+        await ctx.send(":x: There's no game with that ID! Use !list to view all games.")
+        return
+
+    game = currentGames[ctx.guild.id][index]
+    is_owner = getattr(game, "owner_id", None) == ctx.author.id
+    has_admin = await permissions.hasPermission(ctx, "admin.game.startGame")
+
+    if not (is_owner or has_admin):
+        await ctx.send(
+            ":closed_lock_with_key: Only the lobby owner or an admin can start this game."
+        )
+        return
+
+    if game.started:
+        await ctx.send(":x: This lobby has already started.")
+        return
+
+    game.startNow = True
+    await ctx.send(
+        f":white_check_mark: Game {indexStr} will start now or skip the countdown if it begins."
+    )
 
 @client.command(aliases=["ownerstart", "fs"]) 
 async def forceStart(ctx):
@@ -2746,171 +2794,172 @@ async def showAllRunningGames(ctx):
 @commands.cooldown(2, 10, commands.BucketType.user)
 async def join(ctx, *args):
     """Join a game lobby by ID. Admins must use -overwriteAdminWarning flag."""
-    if await permissions.hasPermission(ctx, "member.join"):
-        author = ctx.author
-        guild = ctx.guild
-        channel = ctx.message.channel
-        prefix = dataStorage.getGuildData(ctx.guild, 'prefix', default='!')
+    if not await permissions.hasPermission(ctx, "member.join"):
+        return
+    
+    author = ctx.author
+    guild = ctx.guild
+    channel = ctx.message.channel
+    prefix = dataStorage.getGuildData(ctx.guild, 'prefix', default='!')
 
-        # Parse flags and lobby id from args (order-independent)
-        tokens = list(args) if args else []
-        overwrite_admin = any(
-            t.lower() == "-overwriteadminwarning" for t in tokens
-        )
-        # Extract first numeric token as lobby id
-        indexStr = None
-        for t in tokens:
-            if t.lstrip('-').isdigit():
-                indexStr = t
-                break
+    # Parse flags and lobby id from args (order-independent)
+    overwrite_admin = False
+    indexStr = None
+    for arg in args:
+        arg_lower = str(arg).lower()
+        if arg_lower == "-overwriteadminwarning":
+            overwrite_admin = True
+        elif str(arg).lstrip('-').isdigit():
+            if indexStr is None:
+                indexStr = str(arg)
 
-        allowedToRunCommandHere = True
-        joinChannel = guild.get_channel(
-            dataStorage.getGuildData(ctx.guild, "joinChannel")
-        )
-        is_admin = ctx.message.author.guild_permissions.administrator
+    allowedToRunCommandHere = True
+    joinChannel = guild.get_channel(
+        dataStorage.getGuildData(ctx.guild, "joinChannel")
+    )
+    is_admin = ctx.message.author.guild_permissions.administrator
 
-        if (not is_admin) or overwrite_admin:
-            if dataStorage.getGuildData(ctx.guild, "useJoinChannel"):
-                if joinChannel is not None:
-                    if channel.id == dataStorage.getGuildData(
-                            ctx.guild, "joinChannel"):
-                        try:
-                            await ctx.message.delete()
-                        except discord.HTTPException:
-                            pass
-                    else:
-                        await ctx.send(embed=discord.Embed(
-                            title=":x: You can't use that command here!",
-                            description=f"Use {joinChannel.mention}",
-                            color=0xff0000))
-                        allowedToRunCommandHere = False
-
-            if allowedToRunCommandHere:
-                # Require an ID argument
-                if indexStr is None:
+    if (not is_admin) or overwrite_admin:
+        if dataStorage.getGuildData(ctx.guild, "useJoinChannel"):
+            if joinChannel is not None:
+                if channel.id == dataStorage.getGuildData(
+                        ctx.guild, "joinChannel"):
+                    try:
+                        await ctx.message.delete()
+                    except discord.HTTPException:
+                        pass
+                else:
                     await ctx.send(embed=discord.Embed(
-                        title=":x: Please provide a lobby ID",
-                        description=(
-                            f"Use {prefix}list to find lobby IDs, then run "
-                            f"{prefix}join <ID>. To create a lobby, use "
-                            f"{prefix}create."
-                        ),
+                        title=":x: You can't use that command here!",
+                        description=f"Use {joinChannel.mention}",
                         color=0xff0000))
-                    return
+                    allowedToRunCommandHere = False
 
-                existing = getPlayer(author, guild)
-                if existing is not None and existing.inGame:
-                    embed = discord.Embed(
-                        title="You are already in a game!",
-                        description="Leave your current game first.",
-                        color=0xff000d)
-                    await channel.send(embed=embed)
-                    return
-
-                if isSpectating(author):
-                    embed = discord.Embed(
-                        title="You can't join while spectating!",
-                        description="Use !spectate to stop spectating first.",
-                        color=0xff0000)
-                    await channel.send(embed=embed)
-                    return
-
-                # Parse lobby index
-                try:
-                    index = int(indexStr)
-                except ValueError:
-                    await ctx.send(embed=discord.Embed(
-                        title=":x: Invalid ID",
-                        description="Please provide a numeric lobby ID.",
-                        color=0xff0000))
-                    return
-
-                if guild.id not in currentGames:
-                    currentGames[guild.id] = []
-
-                if not (0 <= index < len(currentGames[guild.id])):
-                    await ctx.send(embed=discord.Embed(
-                        title=":x: Lobby not found",
-                        description=f"Use {prefix}list to find lobby IDs.",
-                        color=0xff0000))
-                    return
-
-                game_to_join = currentGames[guild.id][index]
-
-                # Check lobby state
-                if game_to_join.started:
-                    await ctx.send(embed=discord.Embed(
-                        title=":x: This lobby has already started",
-                        description=(
-                            "Join an available lobby or create a new one "
-                            f"with {prefix}create."
-                        ),
-                        color=0xff0000))
-                    return
-
-                max_players = dataStorage.getGuildData(
-                    ctx.guild, "maxPlayers", default=30
-                )
-                if len(game_to_join.players) >= max_players:
-                    await ctx.send(embed=discord.Embed(
-                        title=":x: This lobby is full",
-                        description=(
-                            f"Max players: {max_players}. "
-                            "Choose another lobby or create a new one."
-                        ),
-                        color=0xff0000))
-                    return
-
-                # Offline check
-                kick_offline = dataStorage.getGuildData(
-                    guild, "kickOfflinePlayers", default=False
-                )
-                if author.status == discord.Status.offline and kick_offline:
-                    await channel.send(embed=discord.Embed(
-                        title="You can't play if your status is offline!",
-                        description="Change your status and try again.",
-                        color=0xff0000))
-                    return
-
-                # Success: add player
-                await game_to_join.addPlayer(author)
-
-                # Confirmation message
-                confirm_embed = discord.Embed(
-                    title=":white_check_mark: You joined lobby!",
+        if allowedToRunCommandHere:
+            # Require an ID argument
+            if indexStr is None:
+                await ctx.send(embed=discord.Embed(
+                    title=":x: Please provide a lobby ID",
                     description=(
-                        f"Lobby ID: {index} | "
-                        f"Players: {len(game_to_join.players)}"
+                        f"Use {prefix}list to find lobby IDs, then run "
+                        f"{prefix}join <ID>. To create a lobby, use "
+                        f"{prefix}create."
                     ),
-                    color=0x00ff00)
-                try:
-                    await author.send(embed=confirm_embed)
-                except discord.HTTPException:
-                    pass  # DMs disabled
+                    color=0xff0000))
+                return
 
-        else:
-            # Admin warning
-            embed = discord.Embed(
-                title=":warning: You have administrator permissions",
-                description=(
-                    "This game hides channels from other players. "
-                    "With admin perms, you can see all channels.\n\n"
-                    "**Use an alt account without admin to play.**\n\n"
-                    f"Override: `{prefix}join <ID> -overwriteAdminWarning`"
-                ),
-                color=0xfff100)
-            if dataStorage.getGuildData(ctx.guild, "useJoinChannel"):
-                try:
-                    await author.send(embed=embed)
-                except discord.HTTPException:
-                    pass
-                try:
-                    await ctx.message.delete()
-                except discord.HTTPException:
-                    pass
-            else:
+            existing = getPlayer(author, guild)
+            if existing is not None and existing.inGame:
+                embed = discord.Embed(
+                    title="You are already in a game!",
+                    description="Leave your current game first.",
+                    color=0xff000d)
                 await channel.send(embed=embed)
+                return
+
+            if isSpectating(author):
+                embed = discord.Embed(
+                    title="You can't join while spectating!",
+                    description="Use !spectate to stop spectating first.",
+                    color=0xff0000)
+                await channel.send(embed=embed)
+                return
+
+            # Parse lobby index
+            try:
+                index = int(indexStr)
+            except ValueError:
+                await ctx.send(embed=discord.Embed(
+                    title=":x: Invalid ID",
+                    description="Please provide a numeric lobby ID.",
+                    color=0xff0000))
+                return
+
+            if guild.id not in currentGames:
+                currentGames[guild.id] = []
+
+            if not (0 <= index < len(currentGames[guild.id])):
+                await ctx.send(embed=discord.Embed(
+                    title=":x: Lobby not found",
+                    description=f"Use {prefix}list to find lobby IDs.",
+                    color=0xff0000))
+                return
+
+            game_to_join = currentGames[guild.id][index]
+
+            # Check lobby state
+            if game_to_join.started:
+                await ctx.send(embed=discord.Embed(
+                    title=":x: This lobby has already started",
+                    description=(
+                        "Join an available lobby or create a new one "
+                        f"with {prefix}create."
+                    ),
+                    color=0xff0000))
+                return
+
+            max_players = dataStorage.getGuildData(
+                ctx.guild, "maxPlayers", default=30
+            )
+            if len(game_to_join.players) >= max_players:
+                await ctx.send(embed=discord.Embed(
+                    title=":x: This lobby is full",
+                    description=(
+                        f"Max players: {max_players}. "
+                        "Choose another lobby or create a new one."
+                    ),
+                    color=0xff0000))
+                return
+
+            # Offline check
+            kick_offline = dataStorage.getGuildData(
+                guild, "kickOfflinePlayers", default=False
+            )
+            if author.status == discord.Status.offline and kick_offline:
+                await channel.send(embed=discord.Embed(
+                    title="You can't play if your status is offline!",
+                    description="Change your status and try again.",
+                    color=0xff0000))
+                return
+
+            # Success: add player
+            await game_to_join.addPlayer(author)
+
+            # Confirmation message
+            confirm_embed = discord.Embed(
+                title=":white_check_mark: You joined lobby!",
+                description=(
+                    f"Lobby ID: {index} | "
+                    f"Players: {len(game_to_join.players)}"
+                ),
+                color=0x00ff00)
+            try:
+                await author.send(embed=confirm_embed)
+            except discord.HTTPException:
+                pass  # DMs disabled
+
+    else:
+        # Admin warning
+        embed = discord.Embed(
+            title=":warning: You have administrator permissions",
+            description=(
+                "This game hides channels from other players. "
+                "With admin perms, you can see all channels.\n\n"
+                "**Use an alt account without admin to play.**\n\n"
+                f"Override: `{prefix}join <ID> -overwriteAdminWarning`"
+            ),
+            color=0xfff100)
+        if dataStorage.getGuildData(ctx.guild, "useJoinChannel"):
+            try:
+                await author.send(embed=embed)
+            except discord.HTTPException:
+                pass
+            try:
+                await ctx.message.delete()
+            except discord.HTTPException:
+                pass
+        else:
+            await channel.send(embed=embed)
 
 
 # command for clearing the game channels
@@ -4931,6 +4980,24 @@ async def invite(ctx):
 @client.command()
 async def error(ctx):
     int("e")
+
+
+# Prefer cog-based commands; remove legacy inline registrations to avoid duplicates
+LEGACY_COMMANDS = [
+    "join", "list", "spectate",
+    "resetstate", "startgame", "cleanup", "endgame", "kick", "purge", "givegold",
+    "whisper", "vote", "use", "shop", "balance", "buy", "leave", "forcestart"
+]
+
+
+def _remove_legacy_commands():
+    for name in LEGACY_COMMANDS:
+        cmd = client.get_command(name)
+        if cmd is not None:
+            client.remove_command(name)
+
+
+_remove_legacy_commands()
 
 # logging
 logger = logging.getLogger('discord')

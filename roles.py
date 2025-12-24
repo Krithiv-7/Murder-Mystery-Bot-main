@@ -119,8 +119,6 @@ class role:
 
             self.unlockRoleChannelAtNightTime = False
 
-            self.killedSomeone = False
-
         elif self.name == "hunter":
             self.revealEmbed = discord.Embed(title="<:hunter:863746095930540032> You are the hunter",
                                              description="Each night you can choose to shoot someone, but if they're not the murderer or werewolf you die and they don't.",
@@ -175,6 +173,12 @@ class role:
             self.revealString = " somehow has an invalid role, that shouldn't be able to happen. Weird."
             self.deadString = " somehow had an invalid role, that should't be able to happen. Weird."
 
+    async def safe_role_send(self, *args, **kwargs):
+        return await self.game.safe_send(self.player.roleChannel, *args, **kwargs)
+
+    async def safe_channel_send(self, channel, *args, **kwargs):
+        return await self.game.safe_send(channel, *args, **kwargs)
+
     def addPlayersToEmbed(self, embed):
         # this is stored in a variable because if someone leaves during the night we don't want it to shift all the indexes and make the player select the wrong person
         if self.name == "murderer":
@@ -221,9 +225,9 @@ class role:
                 embed = self.addPlayersToEmbed(
                     discord.Embed(title="Choose someone to kill", description="Type a number bellow to kill someone",
                                   color=0xff0b00))
-                await self.player.roleChannel.send(embed=embed)
+                await self.safe_role_send(embed=embed)
             else:
-                await self.player.roleChannel.send(
+                await self.safe_role_send(
                     embed=discord.Embed(title=":new_moon: It's too dark to locate a target",
                                         description="The moon isn't visible, and because of that it's so dark that you can't see anything. You can't murder someone while it's this dark.",
                                         color=0xff0000))
@@ -234,10 +238,10 @@ class role:
             if hasattr(self, "revealedDetectiveEmbed"):
                 if not self.revealedDetectiveEmbed:
                     self.revealedDetectiveEmbed = True
-                    await self.player.roleChannel.send(embed=self.revealNextNight)
+                    await self.safe_role_send(embed=self.revealNextNight)
 
             if self.game.weatherIntensity > 90 and self.game.weatherIntensity <= 95:
-                await self.player.roleChannel.send(
+                await self.safe_role_send(
                     embed=discord.Embed(title=":fog: Because of the foggy weather you can't investigate a player",
                                         description="You can investigate a player again when there's no foggy weather anymore",
                                         color=0xff0000))
@@ -248,19 +252,19 @@ class role:
                 embed = self.addPlayersToEmbed(discord.Embed(title="Choose someone to reveal their role",
                                                              description="type a number below to reveal their role",
                                                              color=0x00afff))
-                await self.player.roleChannel.send(embed=embed)
+                await self.safe_role_send(embed=embed)
 
         elif self.name == "doctor":
             if not self.roleChannelEmbedSent:
-                await self.player.roleChannel.send(embed=discord.Embed(title="No one needs to be revived yet!",
-                                                                       description="When the murderer kills someone, we'll let you know here. You can choose to revive them or not, but you can only use this ability once.",
-                                                                       color=0x00afff))
+                await self.safe_role_send(embed=discord.Embed(title="No one needs to be revived yet!",
+                                                              description="When the murderer kills someone, we'll let you know here. You can choose to revive them or not, but you can only use this ability once.",
+                                                              color=0x00afff))
                 self.roleChannelEmbedSent = True
 
         elif self.name == "broadcaster":
             self.messageMode = False
             if self.game.weatherIntensity > 80 and self.game.weatherIntensity <= 90:
-                await self.player.roleChannel.send(embed=discord.Embed(
+                await self.safe_role_send(embed=discord.Embed(
                     title=":thunder_cloud_rain: Because of the stormy weather your broadcasting equipment isn't working",
                     description="You can't send a broadcast this night.", color=0xff0000))
                 await self.player.roleChannel.set_permissions(self.player.member, send_messages=False,
@@ -274,20 +278,20 @@ class role:
                                 value="Type this number to select everyone",
                                 inline=True)
 
-                await self.player.roleChannel.send(embed=embed)
+                await self.safe_role_send(embed=embed)
 
         elif self.name == "thief":
             embed = self.addPlayersToEmbed(discord.Embed(title="Choose someone to steal from",
                                                          description="There is a 50% chance that you will steal half of their :coin: gold",
                                                          color=0x4a4a4a))
-            await self.player.roleChannel.send(embed=embed)
+            await self.safe_role_send(embed=embed)
 
 
         elif self.name == "jailer":
             embed = self.addPlayersToEmbed(discord.Embed(title="Choose someone to put in jail",
                                                          description="They will be put in jail the next night. While in jail, they can't use their role's ability or use the shop.",
                                                          color=0x00b8ff))
-            await self.player.roleChannel.send(embed=embed)
+            await self.safe_role_send(embed=embed)
 
 
         elif self.name == "werewolf":
@@ -296,18 +300,18 @@ class role:
                     discord.Embed(title="Choose someone to kill",
                                   description="Type a number bellow to kill someone. If you don't choose someone, someone will be randomly chosen.",
                                   color=0xffda83))
-                await self.player.roleChannel.send(embed=embed)
+                await self.safe_role_send(embed=embed)
                 await self.player.roleChannel.set_permissions(self.player.member, send_messages=True,
                                                               read_messages=True)
             else:
-                await self.player.roleChannel.send(
+                await self.safe_role_send(
                     embed=discord.Embed(title="You can only use your ability during full moon",
                                         description="When it's full moon, you have to choose to kill someone. If you don't choose someone, someone will be randomly selected.",
                                         color=0x4a4a4a))
 
         elif self.name == "hunter":
             if not self.permAbilityUsed:
-                await self.player.roleChannel.send(embed=self.addPlayersToEmbed(
+                await self.safe_role_send(embed=self.addPlayersToEmbed(
                     discord.Embed(title="Choose someone to shoot",
                                   description="If they're not the :dagger: murderer or :wolf: werewolf, you die and they don't.",
                                   color=0xc1694f)))
@@ -316,7 +320,7 @@ class role:
         elif self.name == "cupid":
             if not self.permAbilityUsed:
                 self.choosingSecondPlayer = False
-                await self.player.roleChannel.send(embed=self.addPlayersToEmbed(
+                await self.safe_role_send(embed=self.addPlayersToEmbed(
                     discord.Embed(title="Choose 2 players to fall in love",
                                   description="You can choose to make 2 players (including yourself) fall in love with each other. Players in love can talk to each other during night time, but if one of them dies the other one dies too. If the murderer falls in love with a villager, the murderer must murder everyone except for their lover.\n\nChoose the first player now, and then choose the other player. You can only use this ability one",
                                   color=0xf4acba)))
@@ -330,7 +334,7 @@ class role:
                     try:
                         choice = int(message.content)
                     except ValueError:
-                        await self.player.roleChannel.send("Please enter a number!")
+                        await self.safe_role_send("Please enter a number!")
                         nonNumber = True
 
                     if choice != -1 and choice >= 0 and choice < len(self.currentPlayerList):
@@ -363,7 +367,7 @@ class role:
                                                                 value="You can only use this ability once.",
                                                                 inline=False)
 
-                                            await self.game.findRole("doctor").roleChannel.send(embed=embed)
+                                                await self.safe_channel_send(self.game.findRole("doctor").roleChannel, embed=embed)
                                             # set permissions for doctor channel
                                             if not self.game.findRole("doctor").inJail:
                                                 await self.game.findRole("doctor").roleChannel.set_permissions(
@@ -371,7 +375,7 @@ class role:
                                                     send_messages=True)
 
                                 # send confirmation message
-                                await self.player.roleChannel.send(embed=discord.Embed(
+                                await self.safe_role_send(embed=discord.Embed(
                                     title=f":dagger: You stabbed {self.currentPlayerList[choice].member.display_name}",
                                     description="If they don't get healed by the doctor tonight, they will die next morning.",
                                     color=0xff0b00))
@@ -380,13 +384,13 @@ class role:
                                                                               send_messages=False)
 
                             else:
-                                await self.player.roleChannel.send(
+                                await self.safe_role_send(
                                     embed=discord.Embed(title="That player is no longer in the game",
                                                         description="They might've left the game, please try a different player!",
                                                         color=0xff0000))
                     else:
                         if not nonNumber:
-                            await self.player.roleChannel.send(
+                            await self.safe_role_send(
                                 f"Please enter a number between 0 and {len(self.currentPlayerList) - 1}!")
 
             elif self.name == "detective":
@@ -395,7 +399,7 @@ class role:
                 try:
                     choice = int(message.content)
                 except ValueError:
-                    await self.player.roleChannel.send("Please enter a number!")
+                    await self.safe_role_send("Please enter a number!")
                     nonNumber = True
 
                 if choice != -1 and choice >= 0 and choice < len(self.currentPlayerList):
@@ -405,22 +409,22 @@ class role:
                                 title=f"{self.currentPlayerList[choice].member.display_name}{self.currentPlayerList[choice].role.revealString}",
                                 color=0x00a1ff)
                             self.revealedDetectiveEmbed = False
-                            await self.player.roleChannel.send(embed=discord.Embed(title="Investigation started!",
-                                                                                   description=f"You started investigating {self.currentPlayerList[choice].member.mention}.",
-                                                                                   color=0x00a1ff))
+                            await self.safe_role_send(embed=discord.Embed(title="Investigation started!",
+                                                                           description=f"You started investigating {self.currentPlayerList[choice].member.mention}.",
+                                                                           color=0x00a1ff))
 
                             await self.player.roleChannel.set_permissions(self.player.member, read_messages=True,
                                                                           send_messages=False)
 
                         else:
-                            await self.player.roleChannel.send(
+                            await self.safe_role_send(
                                 embed=discord.Embed(title="That player is no longer in the game",
                                                     description="They might've left the game, please try a different player!",
                                                     color=0xff0000))
 
                 else:
                     if not nonNumber:
-                        await self.player.roleChannel.send(
+                        await self.safe_role_send(
                             f"Please enter a number between 0 and {len(self.currentPlayerList) - 1}!")
 
             elif self.name == "doctor":
@@ -436,7 +440,7 @@ class role:
 
                                 if removedThePlannedDeath:
                                     self.permAbilityUsed = True
-                                    await self.player.roleChannel.send(
+                                    await self.safe_role_send(
                                         embed=discord.Embed(title=f"You healed this player!",
                                                             description="They will no longer die next morning. Your ability to heal has been used and is no longer usable for the rest of the game.",
                                                             color=0x00ff0d))
@@ -444,7 +448,7 @@ class role:
                                                                                   read_messages=True,
                                                                                   send_messages=False)
                                 else:
-                                    self.player.roleChannel.send(embed=discord.Embed(
+                                    await self.safe_role_send(embed=discord.Embed(
                                         title=f"Unable to find this person in the list of players that will die next morning!",
                                         description="Somehow they weren't in the list of players that will die next morning, and thus can't be removed from it. Your ability was not used and that player shouldn't die next morning.",
                                         color=0xff000d))
@@ -453,15 +457,15 @@ class role:
                                                                                   send_messages=False)
 
                             elif message.content.strip().lower() == "no":
-                                await self.player.roleChannel.send(
+                                await self.safe_role_send(
                                     embed=discord.Embed(title=f"You chose to not heal this player.",
                                                         description="They will die next morning.", color=0xff0b00))
                                 await self.player.roleChannel.set_permissions(self.player.member, read_messages=True,
                                                                               send_messages=False)
                             else:
-                                await self.player.roleChannel.send("Please type yes or no")
+                                await self.safe_role_send("Please type yes or no")
                         else:
-                            await self.player.roleChannel.send(
+                            await self.safe_role_send(
                                 embed=discord.Embed(title="That player is no longer in the game",
                                                     description="They might've left the game"))
                             await self.player.roleChannel.set_permissions(self.player.member, read_messages=True,
@@ -475,7 +479,7 @@ class role:
                         try:
                             choice = int(message.content)
                         except ValueError:
-                            await self.player.roleChannel.send("Please enter a number!")
+                            await self.safe_role_send("Please enter a number!")
                             nonNumber = True
 
                         if choice >= 0 and choice <= len(self.currentRolesList):
@@ -490,9 +494,9 @@ class role:
                                     embed.add_field(name='To cancel, type "cancel"',
                                                     value='If you want to select a different player, type "cancel".',
                                                     inline=False)
-                                    await self.player.roleChannel.send(embed=embed)
+                                    await self.safe_role_send(embed=embed)
                                 else:
-                                    await self.player.roleChannel.send(
+                                    await self.safe_role_send(
                                         embed=discord.Embed(title="The player with that role is no longer in the game!",
                                                             description="They might've left the game", color=0xff0b00))
                             else:
@@ -505,11 +509,11 @@ class role:
                                 embed.add_field(name='To cancel, type "cancel"',
                                                 value='If you want to select a different role to send a message to, type "cancel".',
                                                 inline=False)
-                                await self.player.roleChannel.send(embed=embed)
+                                await self.safe_role_send(embed=embed)
 
                         else:
                             if not nonNumber:
-                                await self.player.roleChannel.send(
+                                await self.safe_role_send(
                                     f"Please enter a number between 0 and {len(self.currentPlayerList)}!")
 
                 else:
@@ -524,13 +528,13 @@ class role:
                                                                                   read_messages=True,
                                                                                   send_messages=False)
                                     m = message.content.replace("```", "")
-                                    await self.player.roleChannel.send(embed=discord.Embed(title="Broadcast sent!",
-                                                                                           description=f"The broadcast won't be received immediately, but next night.\nThe {self.messageTo.role.fancyName} will receive the following message next night: \n \n ```{m}```"))
+                                    await self.safe_role_send(embed=discord.Embed(title="Broadcast sent!",
+                                                                                   description=f"The broadcast won't be received immediately, but next night.\nThe {self.messageTo.role.fancyName} will receive the following message next night: \n \n ```{m}```"))
                                     await self.player.roleChannel.set_permissions(self.player.member,
                                                                                   read_messages=True,
                                                                                   send_messages=False)
                                 else:
-                                    await self.player.roleChannel.send(
+                                    await self.safe_role_send(
                                         embed=discord.Embed(title="That player is no longer in this game.",
                                                             description="They might've left. Try a different role!",
                                                             color=0xff0b00))
@@ -541,9 +545,9 @@ class role:
                                         bc = broadcast(message.content, self.player, player, True)
                                         self.broadcastsToBeSent.append(bc)
                                 m = message.content.replace("```", "")
-                                await self.player.roleChannel.send(embed=discord.Embed(title="Broadcast sent!",
-                                                                                       description=f"The broadcast won't be received immediately, but next night.\nEveryone will receive the following message next night: \n \n```{m}```",
-                                                                                       color=0x19ff00))
+                                await self.safe_role_send(embed=discord.Embed(title="Broadcast sent!",
+                                                                               description=f"The broadcast won't be received immediately, but next night.\nEveryone will receive the following message next night: \n \n```{m}```",
+                                                                               color=0x19ff00))
                                 await self.player.roleChannel.set_permissions(self.player.member, read_messages=True,
                                                                               send_messages=False)
                         else:
@@ -557,7 +561,7 @@ class role:
                     try:
                         choice = int(message.content)
                     except ValueError:
-                        await self.player.roleChannel.send("Please enter a number!")
+                        await self.safe_role_send("Please enter a number!")
                         nonNumber = True
 
                     if choice != -1 and choice >= 0 and choice < len(self.currentPlayerList):
@@ -568,7 +572,7 @@ class role:
                                     moneyStolen = round(self.currentPlayerList[choice].gold / 2 + 0.1)
                                     self.currentPlayerList[choice].gold -= moneyStolen
                                     self.player.gold += moneyStolen
-                                    await self.player.roleChannel.send(embed=discord.Embed(
+                                    await self.safe_role_send(embed=discord.Embed(
                                         title=f"You stole :coin: {moneyStolen} gold from {self.currentPlayerList[choice].member.display_name}",
                                         color=0x00ff00))
 
@@ -576,7 +580,7 @@ class role:
                                                                                   read_messages=True,
                                                                                   send_messages=False)
 
-                                    await self.currentPlayerList[choice].nightChannel.send(embed=discord.Embed(
+                                    await self.game.safe_send(self.currentPlayerList[choice].nightChannel, embed=discord.Embed(
                                         title=f"The :unlock: thief stole :coin: {moneyStolen} gold from you!",
                                         color=0xff0000))
 
@@ -584,7 +588,7 @@ class role:
 
                                 else:
                                     self.abilityUsed = True
-                                    await self.player.roleChannel.send(embed=discord.Embed(
+                                    await self.safe_role_send(embed=discord.Embed(
                                         title=f"You tried to steal from {self.currentPlayerList[choice].member.display_name}, but failed!",
                                         color=0xff0000))
 
@@ -595,14 +599,14 @@ class role:
 
 
                             else:
-                                await self.player.roleChannel.send(
+                                await self.safe_role_send(
                                     embed=discord.Embed(title="That player is no longer in the game",
                                                         description="They might've left the game, please try a different player!",
                                                         color=0xff0000))
 
                     else:
                         if not nonNumber:
-                            await self.player.roleChannel.send(
+                            await self.safe_role_send(
                                 f"Please enter a number between 0 and {len(self.currentPlayerList) - 1}!")
 
             elif self.name == "jailer":
@@ -611,7 +615,7 @@ class role:
                 try:
                     choice = int(message.content)
                 except ValueError:
-                    await self.player.roleChannel.send("Please enter a number!")
+                    await self.safe_role_send("Please enter a number!")
                     nonNumber = True
 
                 if choice != -1 and choice >= 0 and choice < len(self.currentPlayerList):
@@ -621,7 +625,7 @@ class role:
                             await self.player.roleChannel.set_permissions(self.player.member, read_messages=True,
                                                                           send_messages=False)
                             self.jailedNext = self.currentPlayerList[choice]
-                            await self.player.roleChannel.send(embed=discord.Embed(
+                            await self.safe_role_send(embed=discord.Embed(
                                 title=f"{self.currentPlayerList[choice].member.display_name} will be jailed next night",
                                 color=0x00ff00))
                             await self.player.game.sendToAllNightChannels(embed=discord.Embed(
@@ -629,13 +633,13 @@ class role:
                                 description="When in jail, they won't be able to use their role's ability or the shop",
                                 color=0xff0000))
                         else:
-                            await self.player.roleChannel.send(
+                            await self.safe_role_send(
                                 embed=discord.Embed(title="That player is no longer in the game",
                                                     description="They might've left the game, please try a different player!",
                                                     color=0xff0000))
                 else:
                     if not nonNumber:
-                        await self.player.roleChannel.send(
+                        await self.safe_role_send(
                             f"Please enter a number between 0 and {len(self.currentPlayerList) - 1}!")
 
             elif self.name == "werewolf":
@@ -645,7 +649,7 @@ class role:
                     try:
                         choice = int(message.content)
                     except ValueError:
-                        await self.player.roleChannel.send("Please enter a number!")
+                        await self.safe_role_send("Please enter a number!")
                         nonNumber = True
 
                     if choice != -1 and 0 <= choice < len(self.currentPlayerList):
@@ -659,7 +663,7 @@ class role:
                                     self.abilityUsed = True
 
                                     # send confirmation message
-                                    await self.player.roleChannel.send(embed=discord.Embed(
+                                    await self.safe_role_send(embed=discord.Embed(
                                         title=f":wolf: You killed {self.currentPlayerList[choice].member.display_name}",
                                         description="If they don't have any items protecting them from dying, they will die next morning.",
                                         color=0xffda83))
@@ -670,15 +674,15 @@ class role:
                                                                                   send_messages=False)
 
                                 else:
-                                    await self.player.roleChannel.send(
+                                    await self.safe_role_send(
                                         embed=discord.Embed(title="That player is no longer in the game",
                                                             description="They might've left the game, please try a different player!",
                                                             color=0xff0000))
                             else:
-                                await self.player.roleChannel.send(":x: You can only do this during full moon!")
+                                await self.safe_role_send(":x: You can only do this during full moon!")
                     else:
                         if not nonNumber:
-                            await self.player.roleChannel.send(
+                            await self.safe_role_send(
                                 f"Please enter a number between 0 and {len(self.currentPlayerList) - 1}!")
 
 
@@ -688,7 +692,7 @@ class role:
                 try:
                     choice = int(message.content)
                 except ValueError:
-                    await self.player.roleChannel.send("Please enter a number!")
+                    await self.safe_role_send("Please enter a number!")
                     nonNumber = True
 
                 if choice != -1 and 0 <= choice < len(self.currentPlayerList):
@@ -704,20 +708,20 @@ class role:
                                                                      "DM": ":skull: The person you shot wasn't the :dagger: murderer or :wolf: werewolf!"})
                                 self.permAbilityUsed = True
 
-                            await self.player.roleChannel.send(embed=discord.Embed(
+                            await self.safe_role_send(embed=discord.Embed(
                                 title=f"<:hunter:863746095930540032> You shot {self.currentPlayerList[choice].member.display_name}",
                                 description="If they're the :dagger: murderer or :wolf: werewolf, they will die next morning, but if they're not you will die.",
                                 color=0xc1694f))
                             await self.player.roleChannel.set_permissions(self.player.member, send_messages=False,
                                                                           read_messages=True)
                         else:
-                            await self.player.roleChannel.send(
+                            await self.safe_role_send(
                                 embed=discord.Embed(title="That player is no longer in the game",
                                                     description="They might've left the game, please try a different player!",
                                                     color=0xff0000))
                 else:
                     if not nonNumber:
-                        await self.player.roleChannel.send(
+                        await self.safe_role_send(
                             f"Please enter a number between 0 and {len(self.currentPlayerList) - 1}!")
 
             elif self.name == "cupid":
@@ -727,7 +731,7 @@ class role:
                     choice = int(message.content)
                 except ValueError:
                     if message.content.lower() != "cancel":
-                        await self.player.roleChannel.send("Please enter a number!")
+                        await self.safe_role_send("Please enter a number!")
                         nonNumber = True
                 if not message.content.lower() == "cancel":
                     if choice != -1 and 0 <= choice < len(self.currentPlayerList):
@@ -736,12 +740,12 @@ class role:
                                 if self.currentPlayerList[choice] in self.game.players:
                                     self.firstLover = self.currentPlayerList[choice]
                                     self.choosingSecondPlayer = True
-                                    await self.player.roleChannel.send(embed=self.addPlayersToEmbed(discord.Embed(
+                                    await self.safe_role_send(embed=self.addPlayersToEmbed(discord.Embed(
                                         title="Now choose a second player to fall in love with the first one you selected",
                                         description="""To cancel and go back to selecting the first player, type "cancel".""",
                                         color=0xf4acba)))
                                 else:
-                                    await self.player.roleChannel.send(
+                                    await self.safe_role_send(
                                         embed=discord.Embed(title="That player is no longer in the game",
                                                             description="They might've left the game, please try a different player!",
                                                             color=0xff0000))
@@ -752,7 +756,7 @@ class role:
                                         await self.player.roleChannel.set_permissions(self.player.member,
                                                                                       read_messages=True,
                                                                                       send_messages=False)
-                                        await self.player.roleChannel.send(embed=discord.Embed(
+                                        await self.safe_role_send(embed=discord.Embed(
                                             title=f":heart: {self.firstLover.member.display_name} and {self.secondLover.member.display_name} are now in love with each other",
                                             color=0xf4acba))
                                         self.permAbilityUsed = True
@@ -823,31 +827,31 @@ class role:
 
                                         elif self.firstLover.role.name == "werewolf":
                                             if self.secondLover.role.name != "murderer":
-                                                await self.firstLover.roleChannel.send(
+                                                await self.game.safe_send(self.firstLover.roleChannel,
                                                     embed=discord.Embed(title="Your goal has changed",
                                                                         description="Your new goal is to kill everyone except for the :dagger: murderer and your lover. Your lover's goal is still to kill the murderer, and they don't know that you're the werewolf."))
 
 
                                         elif self.firstLover.role.name == "werewolf":
                                             if self.secondLover.role.name != "murderer":
-                                                await self.firstLover.roleChannel.send(
+                                                await self.game.safe_send(self.firstLover.roleChannel,
                                                     embed=discord.Embed(title="Your goal has changed",
                                                                         description="Your new goal is to kill everyone except for the :dagger: murderer and your lover. Your lover's goal is still to kill the murderer, and they don't know that you're the werewolf.",
                                                                         color=0xea596e))
 
                                         elif self.firstLover.role.name == "fool":
-                                            await self.firstLover.nightChannel.send(
+                                            await self.game.safe_send(self.firstLover.nightChannel,
                                                 embed=discord.Embed(title="Your goal doesn't change",
                                                                     description="Your goal hasn't changed since you've fallen in love. You still need to be executed to win.",
                                                                     color=0xfff100))
 
                                         elif self.secondLover.role.name == "fool":
-                                            await self.firstLover.nightChannel.send(
+                                            await self.game.safe_send(self.firstLover.nightChannel,
                                                 embed=discord.Embed(title="Your goal doesn't change",
                                                                     description="Your goal hasn't changed since you've fallen in love. You still need to be executed to win.",
                                                                     color=0xfff100))
 
-                                        await self.firstLover.loveChannel.send(embed=discord.Embed(
+                                        await self.game.safe_send(self.firstLover.loveChannel, embed=discord.Embed(
                                             title=f":heart: {self.firstLover.member.display_name} and {self.secondLover.member.display_name} are now in love with each other",
                                             description="If one of you dies, the other one dies too. If one of you is the murderer, you both must kill everyone except for your lover.",
                                             color=0xea596e))
@@ -855,31 +859,31 @@ class role:
 
 
                                     else:
-                                        await self.player.roleChannel.send(embed=discord.Embed(
+                                        await self.safe_role_send(embed=discord.Embed(
                                             title="The first player you selected left the game while you were selecting the second one.",
                                             description="Please try again!", color=0xff0000))
                                         self.choosingSecondPlayer = False
                                         await self.sendRoleChannelEmbed()
                                 else:
-                                    await self.player.roleChannel.send(
+                                    await self.safe_role_send(
                                         embed=discord.Embed(title="That player is no longer in the game",
                                                             description="They might've left the game, please try a different player!",
                                                             color=0xff0000))
                     else:
                         if not nonNumber:
-                            await self.player.roleChannel.send(
+                            await self.safe_role_send(
                                 f"Please enter a number between 0 and {len(self.currentPlayerList) - 1}!")
                 else:
                     if self.choosingSecondPlayer:
                         self.choosingSecondPlayer = False
                         await self.sendRoleChannelEmbed()
                     else:
-                        await self.player.roleChannel.send("Please enter a number!")
+                        await self.safe_role_send("Please enter a number!")
 
 
 
         else:
-            await self.player.roleChannel.send(
+            await self.safe_role_send(
                 embed=discord.Embed(title=":x: You can't do that while you're in jail!", color=0xff0000))
 
 
