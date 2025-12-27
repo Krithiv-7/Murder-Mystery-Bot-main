@@ -857,7 +857,28 @@ class game:
                             f"{jailed.member.mention}", embed=embed
                         )
 
-                        await jailer.role.jailChannel.edit(position=0)
+                        me = getattr(self.guild, "me", None)
+                        can_move_channel = bool(
+                            me and me.guild_permissions.manage_channels
+                        )
+                        if can_move_channel:
+                            try:
+                                await jailer.role.jailChannel.edit(position=0)
+                            except discord.Forbidden:
+                                print(
+                                    "Missing permission to reorder jail channel; "
+                                    "continuing without moving it."
+                                )
+                            except discord.HTTPException as exc:
+                                print(
+                                    "Failed to move jail channel: "
+                                    f"{getattr(exc, 'text', exc)}"
+                                )
+                        else:
+                            print(
+                                "Bot lacks manage_channels permission; "
+                                "skipping jail channel reorder."
+                            )
 
                         jailer.role.jailedNext = None
 
