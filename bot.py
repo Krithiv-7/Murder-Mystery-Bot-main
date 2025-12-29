@@ -111,6 +111,43 @@ class game:
         self.weatherIntensity = 1
         self.moon = 3
 
+    async def ensure_main_channel(self):
+        """Recreate category/main channel if they were deleted manually."""
+        # Ensure category exists
+        category_missing = (
+            not hasattr(self, "category") or
+            self.category is None or
+            self.guild.get_channel(self.category.id) is None
+        )
+        if category_missing:
+            self.category = await self.guild.create_category("game")
+            await self.category.set_permissions(
+                self.guild.me, send_messages=True, read_messages=True
+            )
+            await self.category.set_permissions(
+                self.role, read_messages=True, send_messages=True
+            )
+            await self.category.set_permissions(
+                self.guild.default_role, read_messages=False
+            )
+            await self.category.set_permissions(
+                self.spectatorRole, read_messages=False, send_messages=False
+            )
+
+        # Ensure main text channel exists
+        chan_missing = (
+            not hasattr(self, "mainChannel") or
+            self.mainChannel is None or
+            self.guild.get_channel(self.mainChannel.id) is None
+        )
+        if chan_missing:
+            self.mainChannel = await self.category.create_text_channel("Game")
+            await self.mainChannel.set_permissions(
+                self.spectatorRole, read_messages=True, send_messages=False
+            )
+            if self.mainChannel not in self.channels:
+                self.channels.append(self.mainChannel)
+
     async def createGame(self):
         # create role
         if self.guild != mainGuild:
@@ -648,6 +685,7 @@ class game:
         await self.makeNightTime()
 
     async def makeNightTime(self):
+        await self.ensure_main_channel()
 
         self.nightTime = True
         await self.mainChannel.set_permissions(self.role, send_messages=False)
@@ -930,6 +968,7 @@ class game:
         await self.dayTime()
 
     async def dayTime(self):
+        await self.ensure_main_channel()
         self.nightTime = False
         self.day = self.day + 1
 
@@ -1908,51 +1947,48 @@ class player:
         self.role = role(self, roleName)
 
     async def updateInventory(self):
-        if hasattr(self, "inventoryChannel"):
-            usableData = []
-            for item in self.inventory:
-                foundItem = False
-                for v in usableData:
-                    if v[0].id == item.id:
-                        foundItem = True
-                        v[1] = v[1] + 1
-
-                if not foundItem:
-                    usableData.append([item, 1])
-
-            embed = discord.Embed(
-                title="Inventory",
-                description=(
-                    "Here's a list of all the items you currently own. "
-                    "To buy more items, use !shop at night time."
-                ),
-                color=0x00b8ff
-            )
+        usableData = []
+        for item in self.inventory:
+            foundItem = False
             for v in usableData:
-                if v[0].autoActivate:
-                    value = (
-                        f"{v[0].description}\n"
-                        "This item will activate automatically"
-                    )
-                    embed.add_field(
-                        name=f"x{v[1]} {v[0].name}",
-                        value=value,
-                        inline=False
-                    )
-                else:
-                    value = (
-                        f"{v[0].description}\n"
-                        f"Usage: {v[0].usage}"
-                    )
-                    embed.add_field(
-                        name=f"x{v[1]} {v[0].name}",
-                        value=value,
-                        inline=False
-                    )
+                if v[0].id == item.id:
+                    foundItem = True
+                    v[1] = v[1] + 1
 
-            await self.inventoryChannel.purge(limit=5)
-            await self.inventoryChannel.send(embed=embed)
-        else:
+            if not foundItem:
+                usableData.append([item, 1])
+
+        embed = discord.Embed(
+            title="Inventory",
+            description=(
+                "Here's a list of all the items you currently own. "
+                "To buy more items, use !shop at night time."
+            ),
+            color=0x00b8ff
+        )
+        for v in usableData:
+            if v[0].autoActivate:
+                value = (
+                    f"{v[0].description}\n"
+                    "This item will activate automatically"
+                )
+                embed.add_field(
+                    name=f"x{v[1]} {v[0].name}",
+                    value=value,
+                    inline=False
+                )
+            else:
+                value = (
+                    f"{v[0].description}\n"
+                    f"Usage: {v[0].usage}"
+                )
+                embed.add_field(
+                    name=f"x{v[1]} {v[0].name}",
+                    value=value,
+                    inline=False
+                )
+
+        if not hasattr(self, "inventoryChannel") or self.inventoryChannel is None:
             inv_ch = await self.game.category.create_text_channel(
                 "Inventory"
             )
@@ -1964,6 +2000,13 @@ class player:
                 self.member, read_messages=True, send_messages=False
             )
             self.game.channels.append(self.inventoryChannel)
+
+        try:
+            await self.inventoryChannel.purge(limit=5)
+            await self.inventoryChannel.send(embed=embed)
+        except discord.NotFound:
+            # Channel was deleted manually; recreate once and retry
+            self.inventoryChannel = None
             await self.updateInventory()
 
 
