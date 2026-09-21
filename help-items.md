@@ -1,8 +1,8 @@
 # Murder‑Mystery‑Bot — Items Guide
 
-Last updated: December 23, 2025
+Last updated: September 21, 2026
 
-Below is a list of all items. While in‑game, you can show this list during night time with `!shop`. Items are bought at night with `!buy <item>` and used with `!use <item> [optional argument]`.
+Below is a list of all items. While in-game, use `!shop` and `!buy <item>` from your game DM during night time. Items are used with `!use <item> [optional argument]` in the context requested by the item.
 
 Some items have spaces in their names; the identifier to type when buying or using is shown in square brackets `[]`.
 

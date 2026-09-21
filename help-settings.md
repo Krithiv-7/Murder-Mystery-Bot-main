@@ -1,6 +1,6 @@
 # Murder‑Mystery‑Bot — Server Settings Reference
 
-Last updated: December 24, 2025
+Last updated: September 21, 2026
 
 The `!settings` command lets admins view and change server‑level configuration used by the game.
 
@@ -23,6 +23,8 @@ Usage examples:
 - `voiceChannel`: Create a game voice channel when a game is created
 - `lockVoiceChannelDuringNight`: Lock the game voice channel at night (requires Move Members permission)
 - `kickOfflinePlayers`: Kick players who go offline during a game
+
+Setup no longer creates tutorial, join, or private role channels. Private role instructions and night prompts are delivered through Discord DMs where possible.
 
 Usage examples:
 - `!settings voiceChannel`

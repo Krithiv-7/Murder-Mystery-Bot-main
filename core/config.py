@@ -1,9 +1,20 @@
 # Bot configuration settings
+import os
+
 import discord
 
+
+def _read_bool_env(name, default):
+    """Read a boolean value from the environment without crashing."""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() not in {"0", "false", "no", "off"}
+
+
 # Storage settings
-localStorage = True  # Use JSON instead of mongoDB
-testingBot = True    # Disable main server integration
+localStorage = _read_bool_env("MMB_LOCAL_STORAGE", True)  # Use JSON instead of mongoDB
+testingBot = _read_bool_env("MMB_TESTING_BOT", True)    # Disable main server integration
 
 # Game role configuration
 requiredRoles = ["murderer", "doctor"]
@@ -17,6 +28,15 @@ roles = {
     "hunter": 6,
     "werewolf": 7,
     "cupid": 8
+}
+
+GAME_DEFAULTS = {
+    "minPlayers": 4,
+    "maxPlayers": 30,
+    "preGameTimer": 120,
+    "votingTime": 120,
+    "nightTimeTimer": 60,
+    "prefix": "!",
 }
 
 # Server links

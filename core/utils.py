@@ -4,6 +4,19 @@ import random
 from core.game_state import currentGames, allPlayers
 
 
+def _resolve_game_factory_args(guild_or_client, debug_or_guild=False, debug=False):
+    """Normalize the accepted legacy and modular factory call signatures."""
+    client = None
+    if hasattr(guild_or_client, "id") and hasattr(guild_or_client, "channels"):
+        guild = guild_or_client
+        actual_debug = debug_or_guild if isinstance(debug_or_guild, bool) else debug
+    else:
+        client = guild_or_client
+        guild = debug_or_guild
+        actual_debug = debug
+    return guild, client, actual_debug
+
+
 def randomizeList(lst):
     """Shuffle a list and return it."""
     result = lst.copy()
@@ -29,10 +42,19 @@ def getPlayer(member, guild):
     return None
 
 
-def createNewGame(client, guild, debug=False):
-    """Create a new game instance."""
+async def createNewGame(guild_or_client, debug_or_guild=False, debug=False, reason: str = "explicit"):
+    """Create and initialize a new Game instance."""
     from core.game import Game
-    return Game(guild, debug)
+
+    guild, client, actual_debug = _resolve_game_factory_args(
+        guild_or_client,
+        debug_or_guild=debug_or_guild,
+        debug=debug,
+    )
+
+    newGame = Game(guild, actual_debug)
+    await newGame.createGame(client=client)
+    return newGame
 
 
 def isSpectating(member, guild):

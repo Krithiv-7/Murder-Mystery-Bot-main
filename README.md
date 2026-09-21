@@ -17,20 +17,21 @@ If you need help, join our Discord server: https://discord.gg/kriti
 - Suggestions welcome: create an issue or drop by the server to discuss.
 
 ## Prerequisites
-- Python 3.7 or higher (Python 3.13+ recommended)
+- Python 3.10 or higher (Python 3.13+ recommended)
 - pip (Python package manager)
+- A Discord application with the required privileged intents enabled
 
 ## Quick Setup (Recommended)
 
 ### Windows
 1. Create your Discord bot and get the token (see below)
-2. Paste your bot token into `token.txt`
+2. Set `DISCORD_TOKEN` in the process environment, or put a single-line token in `token.txt` for local development
 3. Double-click `setup.bat` to install dependencies
 4. Double-click `start.bat` to start the bot
 
 ### Linux/macOS
 1. Create your Discord bot and get the token (see below)
-2. Paste your bot token into `token.txt`
+2. Set `DISCORD_TOKEN` in the process environment, or put a single-line token in `token.txt` for local development
 3. Run setup script:
    ```bash
    chmod +x setup.sh start.sh
@@ -52,9 +53,9 @@ If you need help, join our Discord server: https://discord.gg/kriti
 1. **Install Python** from https://www.python.org/
    - On Windows, make sure to check "Add python to PATH" during installation
 
-2. **Install required libraries**:
+3. **Install required libraries**:
    ```bash
-   pip install discord.py pymongo dnspython
+   python -m pip install -r requirements.txt
    ```
 
 3. **Create a Discord Bot**:
@@ -62,7 +63,7 @@ If you need help, join our Discord server: https://discord.gg/kriti
    - Click "New Application" and give it a name
    - Go to the "Bot" tab and click "Add Bot"
    - Click "Reset Token" and copy the token
-   - Paste the token into `token.txt` in the project directory
+   - Store the token in `DISCORD_TOKEN` for deployments. Never commit it or paste it into issues, chat, or documentation.
    - Under "Privileged Gateway Intents", enable:
      - Presence Intent
      - Server Members Intent
@@ -87,11 +88,19 @@ If you need help, join our Discord server: https://discord.gg/kriti
 
 
 # Database
-This bot can either use a json file or MongoDB as a database! By default it uses json, but if you'd like to use mongoDB then paste your mongoDB login key in mongoDBLoginInfo.txt and in bot.py set LocalStorage to false. The bot will use "discord" as the database name and "murder-mystery" as the collection name, but you can change them in datastorage.py on line 25 and 26 if you want.
+The default configuration uses local JSON storage. MongoDB can be enabled through the configuration and requires a valid `mongoDBLoginInfo.txt`. Local mode writes runtime data and rotating backups; keep those files private and back them up according to your retention needs.
 
 # Important Notes
 
-ℹ️ **This bot primarily uses the discord.py commands library** (prefix commands), and now includes basic slash commands like `/ping` and `/help`. Make sure the invite scope includes `applications.commands`.
+ℹ️ **Gameplay uses prefix commands**, with a small slash-command set: `/ping`, `/help`, `/create`, `/list`, `/join`, and `/spectate`. The invite scope must include `applications.commands`.
+
+## In-Discord Setup
+
+Run `!setup` as an administrator. The setup panel uses buttons and does not create tutorial or join channels. Choose whether the current channel should receive game summaries, then mention the admin roles in one message. Player-private instructions and role abilities are delivered by DM where possible.
+
+Use `!list` to open a lobby dropdown with Join and Spectate buttons. The game still creates a public game channel and may create temporary channels for specific abilities such as whispering or jail. Text commands remain available as a fallback.
+
+The bot needs permission to view and send messages, manage channels, manage roles, manage permissions, and optionally connect/speak/move members when voice settings are enabled.
 
 ⚠️ **All Privileged Intents must be enabled** in the Discord Developer Portal under the Bot settings:
 - Presence Intent

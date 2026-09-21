@@ -1,11 +1,11 @@
 # Terms of Service — Murder‑Mystery‑Bot
 
-Last updated: December 23, 2025
+Last updated: September 21, 2026
 
 These Terms of Service ("Terms") govern your use of the Murder‑Mystery‑Bot (the "Bot") in Discord servers. By inviting or interacting with the Bot, you agree to these Terms.
 
 ## 1. Eligibility and Platform Rules
-- You must be at least 13 years old and comply with Discord's Terms of Service and Community Guidelines.
+- You must meet Discord's minimum age requirement in your location and comply with Discord's Terms of Service and Community Guidelines.
 - Use of the Bot must comply with server rules and our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## 2. Acceptable Use
@@ -14,7 +14,7 @@ These Terms of Service ("Terms") govern your use of the Murder‑Mystery‑Bot (
 - Report vulnerabilities or abuse via the support server or repository issues.
 
 ## 3. Bot Functionality and Availability
-- The Bot is provided "as is" and may change, pause, or stop at any time without notice.
+- The Bot is provided "as is" and may change, pause, or stop at any time. Game features include prefix commands, limited slash commands, button/dropdown interactions, public game channels, and DM-based private role instructions where Discord permits delivery.
 - Features may vary between the hosted instance and self‑hosted deployments.
 
 ## 4. Data and Privacy
@@ -26,7 +26,7 @@ These Terms of Service ("Terms") govern your use of the Murder‑Mystery‑Bot (
 
 ## 6. Intellectual Property
 - The Bot's source code is licensed under the MIT License. See [LICENSE](LICENSE).
-- Game assets, names, and branding within the repository are subject to their respective licenses.
+- Third-party names, trademarks, Discord branding, and external links remain the property of their respective owners. The MIT License applies to this repository's source code only and does not grant rights to third-party assets.
 
 ## 7. Warranties and Liability
 - The Bot is provided without warranties of any kind.
@@ -37,7 +37,7 @@ These Terms of Service ("Terms") govern your use of the Murder‑Mystery‑Bot (
 - Server administrators may remove the Bot from their servers at any time.
 
 ## 9. Changes to Terms
-- We may update these Terms from time to time. Continued use of the Bot after changes constitutes acceptance of the updated Terms.
+- We may update these Terms from time to time. The effective date above will change when an update is published. If you continue using the Bot after the updated Terms take effect, you agree to the revised Terms to the extent permitted by law.
 
 ## 10. Contact
 - For questions or reports, use the support server (see README) or open an issue in the repository.

@@ -174,7 +174,7 @@ class role:
             self.deadString = " somehow had an invalid role, that should't be able to happen. Weird."
 
     async def safe_role_send(self, *args, **kwargs):
-        return await self.game.safe_send(self.player.roleChannel, *args, **kwargs)
+        return await self.player.send_private(*args, **kwargs)
 
     async def safe_channel_send(self, channel, *args, **kwargs):
         return await self.game.safe_send(channel, *args, **kwargs)
@@ -231,8 +231,6 @@ class role:
                     embed=discord.Embed(title=":new_moon: It's too dark to locate a target",
                                         description="The moon isn't visible, and because of that it's so dark that you can't see anything. You can't murder someone while it's this dark.",
                                         color=0xff0000))
-                await self.player.roleChannel.set_permissions(self.player.member, read_messages=True,
-                                                              send_messages=False)
 
         elif self.name == "detective":
             if hasattr(self, "revealedDetectiveEmbed"):
@@ -245,8 +243,6 @@ class role:
                     embed=discord.Embed(title=":fog: Because of the foggy weather you can't investigate a player",
                                         description="You can investigate a player again when there's no foggy weather anymore",
                                         color=0xff0000))
-                await self.player.roleChannel.set_permissions(self.player.member, send_messages=False,
-                                                              read_messages=True)
 
             else:
                 embed = self.addPlayersToEmbed(discord.Embed(title="Choose someone to reveal their role",
@@ -267,8 +263,6 @@ class role:
                 await self.safe_role_send(embed=discord.Embed(
                     title=":thunder_cloud_rain: Because of the stormy weather your broadcasting equipment isn't working",
                     description="You can't send a broadcast this night.", color=0xff0000))
-                await self.player.roleChannel.set_permissions(self.player.member, send_messages=False,
-                                                              read_messages=True)
 
             else:
                 embed = self.addRolesToEmbed(discord.Embed(title="Choose a role to send a message to",
@@ -301,8 +295,6 @@ class role:
                                   description="Type a number bellow to kill someone. If you don't choose someone, someone will be randomly chosen.",
                                   color=0xffda83))
                 await self.safe_role_send(embed=embed)
-                await self.player.roleChannel.set_permissions(self.player.member, send_messages=True,
-                                                              read_messages=True)
             else:
                 await self.safe_role_send(
                     embed=discord.Embed(title="You can only use your ability during full moon",
@@ -367,21 +359,13 @@ class role:
                                                                 value="You can only use this ability once.",
                                                                 inline=False)
 
-                                                await self.safe_channel_send(self.game.findRole("doctor").roleChannel, embed=embed)
-                                            # set permissions for doctor channel
-                                            if not self.game.findRole("doctor").inJail:
-                                                await self.game.findRole("doctor").roleChannel.set_permissions(
-                                                    self.game.findRole("doctor").member, read_messages=True,
-                                                    send_messages=True)
+                                                await self.game.findRole("doctor").role.safe_role_send(embed=embed)
 
                                 # send confirmation message
                                 await self.safe_role_send(embed=discord.Embed(
                                     title=f":dagger: You stabbed {self.currentPlayerList[choice].member.display_name}",
                                     description="If they don't get healed by the doctor tonight, they will die next morning.",
                                     color=0xff0b00))
-                                # set permissions for murderer channel
-                                await self.player.roleChannel.set_permissions(self.player.member, read_messages=True,
-                                                                              send_messages=False)
 
                             else:
                                 await self.safe_role_send(
@@ -413,8 +397,6 @@ class role:
                                                                            description=f"You started investigating {self.currentPlayerList[choice].member.mention}.",
                                                                            color=0x00a1ff))
 
-                            await self.player.roleChannel.set_permissions(self.player.member, read_messages=True,
-                                                                          send_messages=False)
 
                         else:
                             await self.safe_role_send(
@@ -444,32 +426,32 @@ class role:
                                         embed=discord.Embed(title=f"You healed this player!",
                                                             description="They will no longer die next morning. Your ability to heal has been used and is no longer usable for the rest of the game.",
                                                             color=0x00ff0d))
-                                    await self.player.roleChannel.set_permissions(self.player.member,
-                                                                                  read_messages=True,
-                                                                                  send_messages=False)
                                 else:
                                     await self.safe_role_send(embed=discord.Embed(
                                         title=f"Unable to find this person in the list of players that will die next morning!",
                                         description="Somehow they weren't in the list of players that will die next morning, and thus can't be removed from it. Your ability was not used and that player shouldn't die next morning.",
                                         color=0xff000d))
-                                    await self.player.roleChannel.set_permissions(self.player.member,
-                                                                                  read_messages=True,
-                                                                                  send_messages=False)
 
                             elif message.content.strip().lower() == "no":
                                 await self.safe_role_send(
                                     embed=discord.Embed(title=f"You chose to not heal this player.",
                                                         description="They will die next morning.", color=0xff0b00))
-                                await self.player.roleChannel.set_permissions(self.player.member, read_messages=True,
-                                                                              send_messages=False)
                             else:
-                                await self.safe_role_send("Please type yes or no")
+                                await self.safe_role_send(
+                                    embed=discord.Embed(
+                                        title="Please type yes or no",
+                                        description="Choose whether to revive the player.",
+                                        color=0xff0000,
+                                    )
+                                )
                         else:
                             await self.safe_role_send(
-                                embed=discord.Embed(title="That player is no longer in the game",
-                                                    description="They might've left the game"))
-                            await self.player.roleChannel.set_permissions(self.player.member, read_messages=True,
-                                                                          send_messages=False)
+                                embed=discord.Embed(
+                                    title="That player is no longer in the game",
+                                    description="They might've left the game",
+                                    color=0xff0000,
+                                )
+                            )
 
             elif self.name == "broadcaster":
                 if not self.messageMode:
@@ -481,7 +463,6 @@ class role:
                         except ValueError:
                             await self.safe_role_send("Please enter a number!")
                             nonNumber = True
-
                         if choice >= 0 and choice <= len(self.currentRolesList):
                             if choice != len(self.currentRolesList):
                                 if self.game.findRole(self.currentRolesList[choice].name) is not None:
@@ -753,9 +734,6 @@ class role:
                                 if self.currentPlayerList[choice] in self.game.players:
                                     if self.firstLover in self.game.players:
                                         self.secondLover = self.currentPlayerList[choice]
-                                        await self.player.roleChannel.set_permissions(self.player.member,
-                                                                                      read_messages=True,
-                                                                                      send_messages=False)
                                         await self.safe_role_send(embed=discord.Embed(
                                             title=f":heart: {self.firstLover.member.display_name} and {self.secondLover.member.display_name} are now in love with each other",
                                             color=0xf4acba))
@@ -772,23 +750,13 @@ class role:
                                         await self.secondLover.nightChannel.send(embed=discord.Embed(
                                             title="<:bow_and_heart:841964296765177896> The cupid hit you with a love arrow!",
                                             color=0xf4acba))
-                                        self.firstLover.loveChannel = await self.game.category.create_text_channel(
-                                            f"talk with {self.secondLover.member.display_name}")
-                                        await self.firstLover.loveChannel.set_permissions(self.firstLover.member,
-                                                                                          send_messages=True,
-                                                                                          read_messages=True)
-                                        await self.firstLover.loveChannel.set_permissions(self.secondLover.member,
-                                                                                          send_messages=True,
-                                                                                          read_messages=True)
-                                        self.game.channels.append(self.firstLover.loveChannel)
-                                        self.secondLover.loveChannel = self.firstLover.loveChannel
                                         await self.firstLover.nightChannel.send(embed=discord.Embed(
                                             title=f":heart: You are now in love with {self.secondLover.member.display_name}!",
-                                            description=f"If they die, you die too. You can talk to them during the night in {self.firstLover.loveChannel.mention}",
+                                            description="If they die, you die too. You can message each other directly during the night.",
                                             color=0xea596e))
                                         await self.secondLover.nightChannel.send(embed=discord.Embed(
                                             title=f":heart: You are now in love with {self.firstLover.member.display_name}!",
-                                            description=f"If they die, you die too. You can talk to them during the night in {self.firstLover.loveChannel.mention}",
+                                            description="If they die, you die too. You can message each other directly during the night.",
                                             color=0xea596e))
 
                                         if self.firstLover.role.name == "murderer":
@@ -851,10 +819,12 @@ class role:
                                                                     description="Your goal hasn't changed since you've fallen in love. You still need to be executed to win.",
                                                                     color=0xfff100))
 
-                                        await self.game.safe_send(self.firstLover.loveChannel, embed=discord.Embed(
+                                        love_embed = discord.Embed(
                                             title=f":heart: {self.firstLover.member.display_name} and {self.secondLover.member.display_name} are now in love with each other",
                                             description="If one of you dies, the other one dies too. If one of you is the murderer, you both must kill everyone except for your lover.",
-                                            color=0xea596e))
+                                            color=0xea596e)
+                                        await self.firstLover.send_private(embed=love_embed)
+                                        await self.secondLover.send_private(embed=love_embed)
 
 
 

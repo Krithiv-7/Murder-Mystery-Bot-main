@@ -1,4 +1,3 @@
 discord.py>=2.2
-asyncio
-pymongo
-dnspython
+pymongo>=4.0
+dnspython>=2.0

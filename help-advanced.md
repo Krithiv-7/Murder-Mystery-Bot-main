@@ -1,6 +1,6 @@
 # Murder‑Mystery‑Bot — Advanced/Admin Commands
 
-Last updated: December 24, 2025
+Last updated: September 21, 2026
 
 These commands are intended for server admins or moderators. Many require specific permissions as enforced by the bot.
 
@@ -50,7 +50,7 @@ These commands are intended for server admins or moderators. Many require specif
 	- Shows the bot's prefix for this server.
 
 ## Admin & Moderation
-- `!setup`: Interactive server setup (creates join channel and configures defaults)
+- `!setup`: Button-based server setup. It configures permissions and optional summaries without creating tutorial or join channels.
 - `!cleanup` (aliases: `!endGames`, `!stopGames`, `!stopAllGames`, `!endAllGames`): End all running games
 - `!endGame <ID>` (alias: `!stopGame`): End a specific game
 - `!resetState` — permission: `admin.resetState`
@@ -58,8 +58,6 @@ These commands are intended for server admins or moderators. Many require specif
 - `!kick <@member>`: Remove a player from their game
 - `!purge <number>` — permission: `admin.purge`
 	- Deletes the last `<number>` messages in the current channel.
-- `!purgeInfoChannels` — permission: `admin.purge`
-	- Cleans up bot info channels created during games.
 - `!giveGold <player> <amount>` — permission: `admin.game.giveGold`
 	- Gives the specified player extra gold during a game.
 
@@ -87,7 +85,7 @@ These commands are intended for server admins or moderators. Many require specif
 
 ## Notes
 - These commands only work when the bot has the necessary Discord permissions.
-- Using admin commands while playing is discouraged (administrator visibility can break game secrecy).
+- Using admin commands while playing is discouraged. Discord administrators may be able to see channels hidden from ordinary players.
 - Members can only be in one lobby at a time; creating or joining another lobby requires leaving the current one.
 
 ## Debug (Advanced Help)

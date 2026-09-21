@@ -1,6 +1,6 @@
 # Murder‑Mystery‑Bot — Commands Guide
 
-Last updated: December 24, 2025
+Last updated: September 21, 2026
 
 This guide lists the main commands you can use during a game and outside of a game.
 
@@ -11,11 +11,11 @@ This guide lists the main commands you can use during a game and outside of a ga
 - Vote on which player should be executed. The player with the most votes is executed.
 
 ### `!shop`
-- Only usable during 🌕 nighttime.
+- Only usable during 🌕 nighttime, from your game DM.
 - View items available to purchase.
 
 ### `!buy <item>`
-- Only usable during 🌕 nighttime.
+- Only usable during 🌕 nighttime, from your game DM.
 - Buy an item from the shop.
 
 ### `!use <item> [optional argument]`
@@ -24,7 +24,7 @@ This guide lists the main commands you can use during a game and outside of a ga
 
 ### `!whisper <player>`
 - Only usable during ☀️ daytime.
-- Creates a temporary private channel between you and the specified player (deleted at night).
+- Creates a temporary private channel between you and the specified player (deleted at night). This is an intentional exception to DM-based role communication.
 
 ### `!leave`
 - Leave your current game.
@@ -39,7 +39,7 @@ This guide lists the main commands you can use during a game and outside of a ga
 - If you have the Discord Administrator permission, include `-overwriteAdminWarning` to join (e.g., `!join 0 -overwriteAdminWarning`).
 
 ### `!list`
-- Shows all running games with their IDs. Useful when you need a game ID to spectate.
+- Shows running games and provides a dropdown with Join and Spectate buttons. Text commands remain available.
 
 ### `!spectate <ID>`
 - Spectate a game with the specified ID. To stop spectating, use `!spectate` again.

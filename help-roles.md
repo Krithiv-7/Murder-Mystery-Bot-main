@@ -1,6 +1,6 @@
 # Murder‑Mystery‑Bot — Roles Guide
 
-Last updated: December 23, 2025
+Last updated: September 21, 2026
 
 This tutorial lists all roles and their abilities. Some roles are always present; others appear only when enough players have joined the game.
 
@@ -60,7 +60,7 @@ This tutorial lists all roles and their abilities. Some roles are always present
 - Minimum players: 7
 
 ### Cupid :bow_and_heart:
-- Ability: Select two players (including self if desired) to make them fall in love. Lovers share fate: if one dies, the other dies too. Lovers can talk during night. If one lover is the :dagger: murderer, their goal changes to kill everyone except their lover.
+- Ability: Select two players (including self if desired) to make them fall in love. Lovers share fate: if one dies, the other dies too. Lovers receive private DM notices during the night. If one lover is the :dagger: murderer, their goal changes to kill everyone except their lover.
 - Goal: Kill the murderer (unless aligned with murderer as a lover).
 - Minimum players: 8
 

@@ -23,19 +23,19 @@ The game cycles between day and night every few minutes.
 
 ### ☀️ During Daytime
 The following things will happen during daytime (in order):
-1. Sunrise: All players are locked out of their night channels and the daytime channel opens.
+1. Sunrise: Private night instructions close and the daytime game channel opens.
 2. Deaths Announcement (optional): If someone got killed last night, everyone is notified when it becomes daytime.
 3. Gold Per Day Increase (optional): Everyone receives gold each day. This amount starts at 1 and increases by 1 every 3 days. If 5 or fewer players remain, it also increases by 1.
 4. Gold Distribution: Everyone receives gold based on the current gold-per-day.
 5. Voting: Vote someone to execute using `!vote <player>`. If the murderer is executed, innocents win.
 6. Execution: The most voted player gets executed and removed from the game.
 7. Weather Forecast: Upcoming weather and moonlight for the night are shown. Different weather can affect different roles.
-8. Sunset: Daytime channel locks; nighttime channels open.
+8. Sunset: The daytime game channel locks and private night instructions are sent by DM.
 
 ### 🌕 During Nighttime
 Nighttime does not follow a fixed order; actions happen based on what players do:
-- Shop: Use `!shop` to view and purchase items with your gold. Buy items with `!buy <itemId>`.
-- Role Abilities: Use your role’s special ability during the night.
+- Shop: Use `!shop` and `!buy <itemId>` in your game DM during the night.
+- Role Abilities: Follow the role prompt sent to your DM and reply with the requested number or text.
 - Other Events: Outcomes depend on roles, items used, and player actions.
 
 ## Basic Commands

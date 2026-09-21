@@ -25,6 +25,7 @@ from commands import setup_cogs
 
 # Import shared state from core modules
 from core.game_state import currentGames, availableGames, allPlayers
+from core.player import Player
 from core.config import (
     localStorage, testingBot, requiredRoles, roles,
     mainServerInvite, shortMainServerInvite, noPermissionEmbed
@@ -46,12 +47,15 @@ intents.reactions = True
 
 def get_prefix(bot, message):
     """Get command prefix for the bot."""
+    prefix = "!"
+    if message.guild is not None:
+        prefix = dataStorage.getGuildData(message.guild, "prefix", default="!")
     return [
         f"<@!{bot.user.id}> ",
         f"<@{bot.user.id}> ",
         f"<@{bot.user.id}>",
         f"<@!{bot.user.id}> ",
-        dataStorage.getGuildData(message.guild, "prefix", default="!")
+        prefix
     ]
 
 
@@ -274,7 +278,7 @@ class game:
     # add player
     async def addPlayer(self, member):
         # create new player instance
-        newPlayer = player(member, self)
+        newPlayer = Player(member, self)
         # add the instance to the list of players in this game
         self.players.append(newPlayer)
         # add the player to a list of all players playing a game
@@ -339,32 +343,61 @@ class game:
             await member.remove_roles(self.spectatorRole)
 
     async def removePlayer(self, player, **kwargs):
+        if player is None:
+            return
+
         player.inGame = False
 
-        allPlayers[self.guild.id].remove(player)
-        self.players.remove(player)
+        if self.guild.id in allPlayers and player in allPlayers[self.guild.id]:
+            allPlayers[self.guild.id].remove(player)
+
+        if player in self.players:
+            self.players.remove(player)
 
         if hasattr(player, "nightChannel"):
-            self.channels.remove(player.nightChannel)
-            await player.nightChannel.delete()
+            if player.nightChannel in self.channels:
+                self.channels.remove(player.nightChannel)
+            try:
+                await player.nightChannel.delete()
+            except Exception:
+                pass
         if hasattr(player, "roleChannel"):
-            self.channels.remove(player.roleChannel)
-            await player.roleChannel.delete()
+            if player.roleChannel in self.channels:
+                self.channels.remove(player.roleChannel)
+            try:
+                await player.roleChannel.delete()
+            except Exception:
+                pass
         if hasattr(player, "broadcastChannel"):
-            self.channels.remove(player.broadcastChannel)
-            await player.broadcastChannel.delete()
+            if player.broadcastChannel in self.channels:
+                self.channels.remove(player.broadcastChannel)
+            try:
+                await player.broadcastChannel.delete()
+            except Exception:
+                pass
 
-        await player.member.remove_roles(self.role)
+        role_to_remove = getattr(self, "role", None)
+        if role_to_remove is not None and hasattr(player, "member"):
+            try:
+                await player.member.remove_roles(role_to_remove)
+            except Exception:
+                pass
 
         checkWin = True
-        if player.inLove:
-            if player.lover.dyingNow:
+        if getattr(player, "inLove", False):
+            lover = getattr(player, "lover", None)
+            if lover is not None and getattr(lover, "dyingNow", False):
                 checkWin = False
-
-            player.lover.inLove = False
+            if lover is not None:
+                lover.inLove = False
             player.inLove = False
-            await player.loveChannel.delete()
-        if checkWin:
+            love_channel = getattr(player, "loveChannel", None)
+            if love_channel is not None:
+                try:
+                    await love_channel.delete()
+                except Exception:
+                    pass
+        if checkWin and getattr(self, "started", False):
             await self.checkWin()
 
         if len(self.players) <= 0:
@@ -609,18 +642,8 @@ class game:
                 playersToGiveRolesTo.pop(0)
                 availableRoles.pop(0)
 
-        for player in self.players:
-            # create player specific night channel
-            player.nightChannel = await self.category.create_text_channel("Night time")
-            await player.nightChannel.set_permissions(self.role, read_messages=False)
-            self.channels.append(player.nightChannel)
-
-            if player.role.name != "none" and player.role.name != "banker" and player.role.name != "fool":
-                player.roleChannel = await self.category.create_text_channel(player.role.name)
-                await player.roleChannel.set_permissions(self.role, read_messages=False)
-                self.channels.append(player.roleChannel)
-
-            self.allPlayers = self.players.copy()
+        # Player-private game communication is delivered through DMs.
+        self.allPlayers = self.players.copy()
         if self.voiceChannel is not None:
             await self.voiceChannel.set_permissions(self.role, view_channel=True)
 
@@ -1921,95 +1944,6 @@ class game:
             availableGames[self.guild.id].remove(self)
 
 
-class player:
-    def __init__(self, member, game):
-        self.member = member
-        self.game = game
-
-        self.inGame = True
-
-        self.voted = False
-        self.votes = 0
-
-        self.gold = 1
-        self.inventory = []
-
-        self.inJail = False
-
-        self.whisperingTo = []
-
-        self.inLove = False
-        self.lover = None
-        self.loveChannel = None
-        self.dyingNow = False
-
-    def setRole(self, roleName):
-        self.role = role(self, roleName)
-
-    async def updateInventory(self):
-        usableData = []
-        for item in self.inventory:
-            foundItem = False
-            for v in usableData:
-                if v[0].id == item.id:
-                    foundItem = True
-                    v[1] = v[1] + 1
-
-            if not foundItem:
-                usableData.append([item, 1])
-
-        embed = discord.Embed(
-            title="Inventory",
-            description=(
-                "Here's a list of all the items you currently own. "
-                "To buy more items, use !shop at night time."
-            ),
-            color=0x00b8ff
-        )
-        for v in usableData:
-            if v[0].autoActivate:
-                value = (
-                    f"{v[0].description}\n"
-                    "This item will activate automatically"
-                )
-                embed.add_field(
-                    name=f"x{v[1]} {v[0].name}",
-                    value=value,
-                    inline=False
-                )
-            else:
-                value = (
-                    f"{v[0].description}\n"
-                    f"Usage: {v[0].usage}"
-                )
-                embed.add_field(
-                    name=f"x{v[1]} {v[0].name}",
-                    value=value,
-                    inline=False
-                )
-
-        if not hasattr(self, "inventoryChannel") or self.inventoryChannel is None:
-            inv_ch = await self.game.category.create_text_channel(
-                "Inventory"
-            )
-            self.inventoryChannel = inv_ch
-            await self.inventoryChannel.set_permissions(
-                self.game.role, read_messages=False, send_messages=False
-            )
-            await self.inventoryChannel.set_permissions(
-                self.member, read_messages=True, send_messages=False
-            )
-            self.game.channels.append(self.inventoryChannel)
-
-        try:
-            await self.inventoryChannel.purge(limit=5)
-            await self.inventoryChannel.send(embed=embed)
-        except discord.NotFound:
-            # Channel was deleted manually; recreate once and retry
-            self.inventoryChannel = None
-            await self.updateInventory()
-
-
 # in-game commands
 
 
@@ -2217,7 +2151,7 @@ async def shop(ctx):
     if player is not None:
         if player.inGame:
             if player.game.nightTime:
-                if ctx.message.channel == player.nightChannel:
+                if isinstance(ctx.message.channel, discord.DMChannel):
                     embed = discord.Embed(
                         title=f"Shop | :coin: {player.gold}",
                         description=(
@@ -2274,7 +2208,7 @@ async def buy(ctx, itemId):
     if player is not None:
         if player.inGame:
             if player.game.nightTime:
-                if ctx.message.channel == player.nightChannel:
+                if isinstance(ctx.message.channel, discord.DMChannel):
                     itemFound = False
                     broadcasterInGame = False
                     for p in player.game.players:
@@ -2299,9 +2233,7 @@ async def buy(ctx, itemId):
                         )
                         await ctx.send(embed=embed)
                 else:
-                    mention = player.nightChannel.mention
-                    msg = f":x: You can only use this command in {mention}"
-                    await ctx.send(msg)
+                    await ctx.send(":x: Use this command in your game DM.")
             else:
                 await ctx.send(":x: You can only use this command during :full_moon: night time!")
         else:
@@ -2565,6 +2497,12 @@ def getKeys(d):
 
 
 def getPlayer(member, guild):
+    if guild is None:
+        for players in allPlayers.values():
+            for player in players:
+                if player.member == member:
+                    return player
+        return None
     if guild.id not in allPlayers:
         allPlayers[guild.id] = []
     for player in allPlayers[guild.id]:
@@ -2573,23 +2511,43 @@ def getPlayer(member, guild):
     return None
 
 
-async def createNewGame(guild, debug, reason: str = "explicit"):
-    # Trace creation source to help diagnose unintended creations
+async def createNewGame(guild_or_client, debug_or_guild=False, debug=False, reason: str = "explicit"):
+    """Create a game while keeping the legacy bot API compatible."""
     try:
         import inspect
         caller = inspect.stack()[1].function
-        print(f"[createNewGame] reason={reason} caller={caller} guild={guild.id}")
+        guild_id = getattr(guild_or_client, "id", None)
+        print(f"[createNewGame] reason={reason} caller={caller} guild={guild_id}")
     except Exception:
         pass
-    newGame = game(guild, debug)
-    await newGame.createGame()
-    return newGame
+
+    from core.utils import createNewGame as shared_create_new_game
+    return await shared_create_new_game(
+        guild_or_client,
+        debug_or_guild=debug_or_guild,
+        debug=debug,
+        reason=reason,
+    )
 
 
 # stuff
 
 @client.event
 async def on_message(message):
+    if isinstance(message.channel, discord.DMChannel):
+        for players in allPlayers.values():
+            player = next(
+                (candidate for candidate in players if candidate.member == message.author),
+                None,
+            )
+            if player is not None and player.inGame:
+                if player.game.nightTime and not message.content.startswith("!"):
+                    await player.role.processRoleChannelCommand(message)
+                await client.process_commands(message)
+                return
+        await client.process_commands(message)
+        return
+
     if not isinstance(message.channel, discord.channel.DMChannel):
         if not message.guild.id in allPlayers:
             allPlayers[message.guild.id] = []
@@ -4576,10 +4534,6 @@ async def on_raw_reaction_add(payload):
         channel = await client.fetch_channel(payload.channel_id)
         message = await channel.fetch_message(payload.message_id)
         guild = await client.fetch_guild(payload.guild_id)
-        if message.id == dataStorage.getGuildData(guild, "setupMessage"):
-            if member.id == dataStorage.getGuildData(guild, "setupMember"):
-                await setup.processSetupReaction(member, channel, payload.emoji)
-
         # Only handle notification reactions if notification message known
         notification_id = getattr(notificationMessage, "id", None)
         if notificationMessage is not None and message.id == notification_id:
@@ -5048,7 +5002,7 @@ async def error(ctx):
 
 # Prefer cog-based commands; remove legacy inline registrations to avoid duplicates
 LEGACY_COMMANDS = [
-    "join", "list", "spectate",
+    "join", "list", "spectate", "create", "creategame",
     "resetstate", "startgame", "cleanup", "endgame", "kick", "purge", "givegold",
     "whisper", "vote", "use", "shop", "balance", "buy", "leave", "forcestart"
 ]
@@ -5063,25 +5017,36 @@ def _remove_legacy_commands():
 
 _remove_legacy_commands()
 
-# logging
-logger = logging.getLogger('discord')
-logger.setLevel(logging.INFO)
-log_path = os.path.join(os.path.dirname(__file__), 'log.log')
-handler = logging.FileHandler(
-    filename=log_path, encoding='utf-8', mode='w'
-)
-log_format = '%(asctime)s:%(levelname)s:%(name)s: %(message)s'
-handler.setFormatter(logging.Formatter(log_format))
-logger.addHandler(handler)
+def resolve_token():
+    """Resolve the bot token from environment variables or local config."""
+    token = os.environ.get("DISCORD_TOKEN")
+    if token:
+        return token
 
-# get the token securely: prefer environment variable, fallback to token.txt near this file
-token = os.environ.get("DISCORD_TOKEN")
-if not token:
+    token_path = os.path.join(os.path.dirname(__file__), "token.txt")
     try:
-        with open(os.path.join(os.path.dirname(__file__), "token.txt"), "r", encoding="utf-8") as tokenFile:
-            token = tokenFile.read().strip()
-    except FileNotFoundError:
-        raise RuntimeError("Bot token not found. Set DISCORD_TOKEN env var or create token.txt next to bot.py.")
+        with open(token_path, "r", encoding="utf-8") as token_file:
+            return token_file.read().strip()
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            "Bot token not found. Set DISCORD_TOKEN env var or create token.txt next to bot.py."
+        ) from exc
 
-# run token
-client.run(token)
+
+def main():
+    """Start the Discord bot once the module is executed as a script."""
+    logger = logging.getLogger('discord')
+    logger.setLevel(logging.INFO)
+    log_path = os.path.join(os.path.dirname(__file__), 'log.log')
+    handler = logging.FileHandler(
+        filename=log_path, encoding='utf-8', mode='w'
+    )
+    log_format = '%(asctime)s:%(levelname)s:%(name)s: %(message)s'
+    handler.setFormatter(logging.Formatter(log_format))
+    logger.addHandler(handler)
+
+    client.run(resolve_token())
+
+
+if __name__ == "__main__":
+    main()
