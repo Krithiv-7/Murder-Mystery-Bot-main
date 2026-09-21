@@ -64,6 +64,21 @@ This tutorial lists all roles and their abilities. Some roles are always present
 - Goal: Kill the murderer (unless aligned with murderer as a lover).
 - Minimum players: 8
 
+### Mayor :crown:
+- Ability: Your daytime vote counts as two votes.
+- Goal: Kill the murderer.
+- Minimum players: 4
+
+### Bodyguard :shield:
+- Ability: Protect one player each night. If that player is attacked, the bodyguard dies instead.
+- Goal: Kill the murderer.
+- Minimum players: 5
+
+### Medium :crystal_ball:
+- Ability: Once per game, receive a DM clue revealing the role of one dead player.
+- Goal: Kill the murderer.
+- Minimum players: 6
+
 ---
 
 See also: [Basics](help.md), [Advanced/Admin Commands](help-advanced.md), [Server Settings](help-settings.md), [Terms](tos.md), [Privacy](pp.md), [Code of Conduct](CODE_OF_CONDUCT.md).

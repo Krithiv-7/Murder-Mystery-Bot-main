@@ -95,29 +95,8 @@ class PlayerCommands(commands.Cog):
             await ctx.send(":x: You can't vote on yourself!")
             return
             
-        if not player.voted:
-            votedPlayer.votes += 1
-            player.voted = True
-            player.votedOn = votedPlayer
-            await ctx.send(
-                f"{ctx.author.mention} voted to execute {votedPlayer.member.mention}! "
-                f"They're now at **{votedPlayer.votes}** votes."
-            )
-            player.game.playersThatVoted.append(player)
-            player.game.extendVotingTime = True
-        else:
-            if player.votedOn != votedPlayer:
-                player.votedOn.votes -= 1
-                votedPlayer.votes += 1
-                await ctx.send(
-                    f"{ctx.author.mention} changed their vote from "
-                    f"{player.votedOn.member.mention} to {votedPlayer.member.mention}! "
-                    f"They're now at **{votedPlayer.votes}** votes."
-                )
-                player.votedOn = votedPlayer
-                player.game.extendVotingTime = True
-            else:
-                await ctx.send(":x: You already voted on that player!")
+        _, result = await player.game.record_vote(ctx.author, votedMember)
+        await ctx.send(result)
 
     @commands.command()
     async def use(self, ctx, itemName="", *, arg=None):

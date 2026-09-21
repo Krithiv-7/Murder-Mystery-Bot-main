@@ -151,6 +151,55 @@ class role:
             self.firstLover = None
             self.secondLover = None
 
+        elif self.name == "mayor":
+            self.revealEmbed = discord.Embed(
+                title=":crown: You are the mayor",
+                description="Your daytime vote counts as two votes.",
+                color=0xf1c40f,
+            )
+            self.revealEmbed.add_field(
+                name="How to win:", value="Kill the murderer", inline=False
+            )
+            self.fancyName = ":crown: mayor"
+            self.revealString = f" is the {self.fancyName}"
+            self.deadString = f" was the {self.fancyName}"
+            self.voteWeight = 2
+
+        elif self.name == "bodyguard":
+            self.revealEmbed = discord.Embed(
+                title=":shield: You are the bodyguard",
+                description=(
+                    "Each night, protect one player. If they would be killed "
+                    "by a night attack, you die instead."
+                ),
+                color=0x3498db,
+            )
+            self.revealEmbed.add_field(
+                name="How to win:", value="Kill the murderer", inline=False
+            )
+            self.fancyName = ":shield: bodyguard"
+            self.revealString = f" is the {self.fancyName}"
+            self.deadString = f" was the {self.fancyName}"
+            self.abilityUsed = False
+            self.protectedPlayer = None
+
+        elif self.name == "medium":
+            self.revealEmbed = discord.Embed(
+                title=":crystal_ball: You are the medium",
+                description=(
+                    "Once per game at night, receive a clue revealing the role "
+                    "of one player who has died."
+                ),
+                color=0x9b59b6,
+            )
+            self.revealEmbed.add_field(
+                name="How to win:", value="Kill the murderer", inline=False
+            )
+            self.fancyName = ":crystal_ball: medium"
+            self.revealString = f" is the {self.fancyName}"
+            self.deadString = f" was the {self.fancyName}"
+            self.clueUsed = False
+
         elif self.name == "none":
             self.revealEmbed = discord.Embed(title="You don't have a special role.",
                                              description="You don't have any special abilities this game. During night time you can use the shop.",
@@ -286,6 +335,35 @@ class role:
                                                          description="They will be put in jail the next night. While in jail, they can't use their role's ability or use the shop.",
                                                          color=0x00b8ff))
             await self.safe_role_send(embed=embed)
+
+        elif self.name == "bodyguard":
+            embed = self.addPlayersToEmbed(
+                discord.Embed(
+                    title="Choose someone to protect",
+                    description="If they are attacked tonight, you die instead.",
+                    color=0x3498db,
+                )
+            )
+            await self.safe_role_send(embed=embed)
+
+        elif self.name == "medium":
+            dead_players = [
+                player for player in self.game.allPlayers
+                if player not in self.game.players
+            ]
+            if not self.clueUsed and dead_players:
+                revealed = random.choice(dead_players)
+                self.clueUsed = True
+                await self.safe_role_send(
+                    embed=discord.Embed(
+                        title=":crystal_ball: A spirit revealed a role",
+                        description=(
+                            f"The dead player {revealed.member.display_name} "
+                            f"was the {revealed.role.fancyName}."
+                        ),
+                        color=0x9b59b6,
+                    )
+                )
 
 
         elif self.name == "werewolf":
@@ -589,6 +667,34 @@ class role:
                         if not nonNumber:
                             await self.safe_role_send(
                                 f"Please enter a number between 0 and {len(self.currentPlayerList) - 1}!")
+
+            elif self.name == "bodyguard":
+                nonNumber = False
+                choice = -1
+                try:
+                    choice = int(message.content)
+                except ValueError:
+                    await self.safe_role_send("Please enter a number!")
+                    nonNumber = True
+
+                if choice != -1 and 0 <= choice < len(self.currentPlayerList):
+                    if not self.abilityUsed:
+                        target = self.currentPlayerList[choice]
+                        if target in self.game.players:
+                            self.abilityUsed = True
+                            self.protectedPlayer = target
+                            target.role.protectedBy = self.player
+                            await self.safe_role_send(
+                                embed=discord.Embed(
+                                    title=f":shield: You are protecting {target.member.display_name}",
+                                    description="If they are attacked tonight, you will die instead.",
+                                    color=0x3498db,
+                                )
+                            )
+                elif not nonNumber:
+                    await self.safe_role_send(
+                        f"Please enter a number between 0 and {len(self.currentPlayerList) - 1}!"
+                    )
 
             elif self.name == "jailer":
                 nonNumber = False

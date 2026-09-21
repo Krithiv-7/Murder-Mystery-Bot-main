@@ -27,7 +27,10 @@ roles = {
     "fool": 6,
     "hunter": 6,
     "werewolf": 7,
-    "cupid": 8
+    "cupid": 8,
+    "mayor": 4,
+    "bodyguard": 5,
+    "medium": 6,
 }
 
 GAME_DEFAULTS = {

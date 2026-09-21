@@ -160,3 +160,54 @@ def test_core_utils_create_new_game():
     finally:
         core_game_module.Game = original
 
+
+def test_new_roles_have_expected_state_and_thresholds():
+    from types import SimpleNamespace
+    from core.config import roles
+    from core.player import Player
+
+    game = SimpleNamespace()
+    member = SimpleNamespace(id=1, display_name="TestUser")
+
+    mayor = Player(member, game)
+    mayor.setRole("mayor")
+    bodyguard = Player(member, game)
+    bodyguard.setRole("bodyguard")
+    medium = Player(member, game)
+    medium.setRole("medium")
+
+    assert roles["mayor"] == 4
+    assert roles["bodyguard"] == 5
+    assert roles["medium"] == 6
+    assert mayor.role.voteWeight == 2
+    assert bodyguard.role.protectedPlayer is None
+    assert medium.role.clueUsed is False
+
+
+def test_shared_vote_recording_applies_mayor_weight():
+    from types import SimpleNamespace
+
+    game = core_game_module.Game(SimpleNamespace(id=99), True)
+    game.voteTime = True
+    voter = SimpleNamespace(
+        member=SimpleNamespace(id=1, display_name="Mayor"),
+        role=SimpleNamespace(voteWeight=2),
+        voted=False,
+        votes=0,
+    )
+    target = SimpleNamespace(
+        member=SimpleNamespace(id=2, display_name="Target"),
+        role=SimpleNamespace(voteWeight=1),
+        voted=False,
+        votes=0,
+    )
+    game.players = [voter, target]
+    game.playersThatVoted = []
+
+    success, message = asyncio.run(game.record_vote(voter.member, target.member))
+
+    assert success is True
+    assert "Target" in message
+    assert target.votes == 2
+    assert voter.voted is True
+

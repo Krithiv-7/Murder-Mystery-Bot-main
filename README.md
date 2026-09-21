@@ -92,7 +92,7 @@ The default configuration uses local JSON storage. MongoDB can be enabled throug
 
 # Important Notes
 
-ℹ️ **Gameplay uses prefix commands**, with a small slash-command set: `/ping`, `/help`, `/create`, `/list`, `/join`, and `/spectate`. The invite scope must include `applications.commands`.
+ℹ️ **Gameplay uses prefix commands**, with slash equivalents for common player, lobby, admin, settings, and debug actions. Permission checks match the existing prefix commands. The invite scope must include `applications.commands`.
 
 ## In-Discord Setup
 
@@ -101,6 +101,8 @@ Run `!setup` as an administrator. The setup panel uses buttons and does not crea
 Use `!list` to open a lobby dropdown with Join and Spectate buttons. The game still creates a public game channel and may create temporary channels for specific abilities such as whispering or jail. Text commands remain available as a fallback.
 
 The bot needs permission to view and send messages, manage channels, manage roles, manage permissions, and optionally connect/speak/move members when voice settings are enabled.
+
+The role roster includes Murderer, Doctor, Detective, Banker, Thief, Jailer, Broadcaster, Fool, Hunter, Werewolf, Cupid, Mayor, Bodyguard, and Medium. Roles with minimum-player requirements are only assigned when the match is large enough.
 
 ⚠️ **All Privileged Intents must be enabled** in the Discord Developer Portal under the Bot settings:
 - Presence Intent

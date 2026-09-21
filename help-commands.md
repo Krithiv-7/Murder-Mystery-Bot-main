@@ -57,4 +57,4 @@ This guide lists the main commands you can use during a game and outside of a ga
 
 For the full advanced/admin command set, see [help-advanced.md](help-advanced.md). For roles and items, see [help-roles.md](help-roles.md) and [help-items.md](help-items.md).
 
-Slash command equivalents: `/create`, `/list`, `/join <ID>`, `/spectate <ID>`, `/help`, `/ping`.
+Slash equivalents now cover common player, lobby, admin, settings, and game-debug actions. They include `/create`, `/list`, `/join`, `/spectate`, `/setup`, `/stats`, `/level`, `/objective`, `/balance`, `/leave`, `/vote`, `/shop`, `/buy`, `/use`, `/whisper`, `/force-start`, `/start-game`, `/cleanup`, `/end-game`, `/kick`, `/give-gold`, `/reset-state`, `/settings`, `/prefix`, `/skip-votes`, `/skip-night`, `/set-weather`, `/set-moon`, `/help`, and `/ping`. Fine-grained permission-management and objective-debug commands remain prefix-based.

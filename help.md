@@ -32,6 +32,8 @@ The following things will happen during daytime (in order):
 7. Weather Forecast: Upcoming weather and moonlight for the night are shown. Different weather can affect different roles.
 8. Sunset: The daytime game channel locks and private night instructions are sent by DM.
 
+The game channel also maintains an editable status embed showing the current phase, day, player count, weather, and moon.
+
 ### 🌕 During Nighttime
 Nighttime does not follow a fixed order; actions happen based on what players do:
 - Shop: Use `!shop` and `!buy <itemId>` in your game DM during the night.

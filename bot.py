@@ -9,6 +9,7 @@ import datetime
 import logging
 from aiohttp import ClientOSError
 import traceback as tb
+from types import SimpleNamespace
 
 # script imports
 import items
@@ -4299,7 +4300,11 @@ async def slash_help(interaction: discord.Interaction):
     help_embed.add_field(name="Prefix", value=f"Current server prefix: {prefix}", inline=False)
     help_embed.add_field(
         name="Getting Started",
-        value=f"Use {prefix}help for detailed help or {prefix}advancedHelp for categories. Basic slash commands: /ping, /help.",
+        value=(
+            f"Use {prefix}help for detailed help or {prefix}advancedHelp for categories. "
+            "Slash commands include /ping, /help, /setup, /create, /list, "
+            "/join, /spectate, /stats, /level, /objective, and /balance."
+        ),
         inline=False,
     )
     help_embed.add_field(
@@ -4470,6 +4475,527 @@ async def slash_spectate(interaction: discord.Interaction, lobby_id: int):
         await interaction.response.send_message(
             ":x: Lobby not found.", ephemeral=True
         )
+
+
+@client.tree.command(name="setup", description="Configure this server")
+async def slash_setup(interaction: discord.Interaction):
+    """Start the same permission-protected setup used by !setup."""
+    if not _mark_handled(interaction):
+        return
+    if interaction.guild is None:
+        await interaction.response.send_message(
+            ":x: Setup can only be used inside a server.", ephemeral=True
+        )
+        return
+    if not permissions.memberHasPermission(interaction.user, "admin.setup"):
+        await interaction.response.send_message(
+            ":closed_lock_with_key: You don't have permission to run setup.",
+            ephemeral=True,
+        )
+        return
+    games_running = bool(currentGames.get(interaction.guild.id))
+    await setup.initializeSetup(interaction, games_running)
+
+
+@client.tree.command(name="stats", description="Show player statistics")
+async def slash_stats(
+    interaction: discord.Interaction,
+    member: discord.Member = None,
+):
+    if not _mark_handled(interaction):
+        return
+    if not permissions.memberHasPermission(interaction.user, "member.levels.stats"):
+        await interaction.response.send_message(
+            ":closed_lock_with_key: You don't have permission to view stats.",
+            ephemeral=True,
+        )
+        return
+    target = member or interaction.user
+    embed = discord.Embed(
+        title=f"Stats for {target.display_name}",
+        description=(
+            f":video_game: Games played: {getPlayerData(target, 'gamesPlayed', default=0)}\n\n"
+            f":adult: Villager wins: {getPlayerData(target, 'villagerWins', default=0)}\n"
+            f":dagger: Murderer wins: {getPlayerData(target, 'murdererWins', default=0)}\n"
+            f":clown: Fool wins: {getPlayerData(target, 'foolWins', default=0)}\n"
+            f":wolf: Werewolf wins: {getPlayerData(target, 'werewolfWins', default=0)}"
+        ),
+        color=0x00ff00,
+    )
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@client.tree.command(name="level", description="Show player level")
+async def slash_level(
+    interaction: discord.Interaction,
+    member: discord.Member = None,
+):
+    if not _mark_handled(interaction):
+        return
+    if not permissions.memberHasPermission(interaction.user, "member.levels.level"):
+        await interaction.response.send_message(
+            ":closed_lock_with_key: You don't have permission to view levels.",
+            ephemeral=True,
+        )
+        return
+    target = member or interaction.user
+    player_level = getPlayerData(target, "level", default=1)
+    current_xp = getPlayerData(target, "xp", default=0)
+    xp_needed = objectives.getNextLevelRequirement(player_level) - current_xp
+    embed = discord.Embed(
+        title=f"{target.display_name} is level {player_level}",
+        description=(
+            f"{objectives.getXpProgressBar(target)}\n"
+            f"{xp_needed} xp required for next level"
+        ),
+        color=0x00ff00,
+    )
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@client.tree.command(name="objective", description="Show your objective")
+async def slash_objective(interaction: discord.Interaction):
+    if not _mark_handled(interaction):
+        return
+    if not permissions.memberHasPermission(interaction.user, "member.levels.objective"):
+        await interaction.response.send_message(
+            ":closed_lock_with_key: You don't have permission to view objectives.",
+            ephemeral=True,
+        )
+        return
+    if getPlayer(interaction.user, interaction.guild) is not None:
+        await interaction.response.send_message(
+            ":x: You can't view objective progress while in a game.",
+            ephemeral=True,
+        )
+        return
+
+    class ObjectiveContext:
+        author = interaction.user
+
+        async def send(self, *args, **kwargs):
+            return await interaction.response.send_message(
+                *args, ephemeral=True, **kwargs
+            )
+
+    await objectives.objectivesCommand(ObjectiveContext())
+
+
+@client.tree.command(name="balance", description="Show your gold balance")
+async def slash_balance(interaction: discord.Interaction):
+    if not _mark_handled(interaction):
+        return
+    player = getPlayer(interaction.user, interaction.guild)
+    if player is None:
+        await interaction.response.send_message(
+            ":x: You can only use this command while you're in a game.",
+            ephemeral=True,
+        )
+        return
+    await interaction.response.send_message(
+        f":coin: You have {player.gold} gold.", ephemeral=True
+    )
+
+
+@client.tree.command(name="leave", description="Leave your current game")
+async def slash_leave(interaction: discord.Interaction):
+    if not _mark_handled(interaction):
+        return
+    player = getPlayer(interaction.user, interaction.guild)
+    if player is None or not player.inGame:
+        await interaction.response.send_message(
+            ":x: You can only use this command while in a game.", ephemeral=True
+        )
+        return
+    await player.game.removePlayer(player)
+    await interaction.response.send_message(
+        ":white_check_mark: You left the game.", ephemeral=True
+    )
+
+
+@client.tree.command(name="vote", description="Vote to execute a player")
+async def slash_vote(interaction: discord.Interaction, member: discord.Member):
+    if not _mark_handled(interaction):
+        return
+    player = getPlayer(interaction.user, interaction.guild)
+    voted_player = getPlayer(member, interaction.guild)
+    if player is None or voted_player is None or not player.inGame or not voted_player.inGame:
+        await interaction.response.send_message(
+            ":x: Both players must be in the same game.", ephemeral=True
+        )
+        return
+    if player.game != voted_player.game or not player.game.voteTime:
+        await interaction.response.send_message(
+            ":x: Voting is not available for that player right now.", ephemeral=True
+        )
+        return
+    if voted_player == player:
+        await interaction.response.send_message(
+            ":x: You can't vote for yourself.", ephemeral=True
+        )
+        return
+    _, message = await player.game.record_vote(interaction.user, member)
+    await interaction.response.send_message(message, ephemeral=True)
+
+
+@client.tree.command(name="shop", description="View the nighttime shop")
+async def slash_shop(interaction: discord.Interaction):
+    if not _mark_handled(interaction):
+        return
+    player = getPlayer(interaction.user, interaction.guild)
+    if player is None or not player.inGame:
+        await interaction.response.send_message(
+            ":x: You can only use this command while in a game.", ephemeral=True
+        )
+        return
+    if not player.game.nightTime:
+        await interaction.response.send_message(
+            ":x: The shop is only available at night.", ephemeral=True
+        )
+        return
+    broadcaster = any(p.role.name == "broadcaster" for p in player.game.players)
+    embed = discord.Embed(
+        title=f"Shop | :coin: {player.gold}",
+        description="Use `/buy item` or `!buy item` to purchase an item.",
+        color=0x00b8ff,
+    )
+    for item_class in items.getItems(
+        broadcasterInGame=broadcaster, role=player.role.name
+    ):
+        item = item_class()
+        embed.add_field(
+            name=item.name,
+            value=f"{item.description}\nCost: :coin: {item.cost}",
+            inline=False,
+        )
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+class _SlashContext:
+    """Small context adapter for existing item handlers."""
+
+    def __init__(self, interaction):
+        self.interaction = interaction
+        self.author = interaction.user
+        self.guild = interaction.guild
+        self.channel = self
+        self.message = SimpleNamespace(
+            author=interaction.user,
+            guild=interaction.guild,
+            channel=self,
+        )
+
+    async def send(self, *args, **kwargs):
+        return await self.interaction.followup.send(
+            *args, ephemeral=True, **kwargs
+        )
+
+
+@client.tree.command(name="buy", description="Buy an item during the night")
+async def slash_buy(interaction: discord.Interaction, item_id: str):
+    if not _mark_handled(interaction):
+        return
+    player = getPlayer(interaction.user, interaction.guild)
+    if player is None or not player.inGame or not player.game.nightTime:
+        await interaction.response.send_message(
+            ":x: You can only buy items during the night while in a game.",
+            ephemeral=True,
+        )
+        return
+    broadcaster = any(p.role.name == "broadcaster" for p in player.game.players)
+    item_class = next(
+        (
+            item_type
+            for item_type in items.getItems(
+                broadcasterInGame=broadcaster, role=player.role.name
+            )
+            if item_type().id == item_id.lower()
+        ),
+        None,
+    )
+    if item_class is None:
+        await interaction.response.send_message(
+            ":x: That's not a valid item.", ephemeral=True
+        )
+        return
+    await interaction.response.defer(ephemeral=True)
+    await items.buy(item_class(), player, _SlashContext(interaction))
+
+
+@client.tree.command(name="use", description="Use an item from your inventory")
+async def slash_use(
+    interaction: discord.Interaction,
+    item_id: str,
+    text: str = None,
+    target: discord.Member = None,
+):
+    if not _mark_handled(interaction):
+        return
+    player = getPlayer(interaction.user, interaction.guild)
+    if player is None or not player.inGame:
+        await interaction.response.send_message(
+            ":x: You can only use items while in a game.", ephemeral=True
+        )
+        return
+    item = next(
+        (owned_item for owned_item in player.inventory if owned_item.id == item_id.lower()),
+        None,
+    )
+    if item is None:
+        await interaction.response.send_message(
+            ":x: That item is not in your inventory.", ephemeral=True
+        )
+        return
+    argument = text
+    player_target = getPlayer(target, interaction.guild) if target else None
+    if item.needArg and item.needPlayerArg and player_target is None:
+        await interaction.response.send_message(
+            ":x: This item requires a target member.", ephemeral=True
+        )
+        return
+    if item.needArg and not item.needPlayerArg and argument is None:
+        await interaction.response.send_message(
+            f"Usage: {item.usage}", ephemeral=True
+        )
+        return
+    await interaction.response.defer(ephemeral=True)
+    await item.use(_SlashContext(interaction), player_target or argument)
+
+
+@client.tree.command(name="settings", description="View or change game settings")
+async def slash_settings(
+    interaction: discord.Interaction,
+    setting: str = None,
+    value: str = None,
+):
+    if not _mark_handled(interaction):
+        return
+    await interaction.response.defer(ephemeral=True)
+    await settings.callback(_SlashContext(interaction), setting, value)
+
+
+@client.tree.command(name="prefix", description="View or change the server prefix")
+async def slash_prefix(interaction: discord.Interaction, new_prefix: str = None):
+    if not _mark_handled(interaction):
+        return
+    await interaction.response.defer(ephemeral=True)
+    await prefix.callback(_SlashContext(interaction), new_prefix)
+
+
+@client.tree.command(name="whisper", description="Whisper to another player")
+async def slash_whisper(interaction: discord.Interaction, member: discord.Member):
+    if not _mark_handled(interaction):
+        return
+    player = getPlayer(interaction.user, interaction.guild)
+    other_player = getPlayer(member, interaction.guild)
+    if player is None or other_player is None or not player.inGame or not other_player.inGame:
+        await interaction.response.send_message(":x: Both players must be in the same game.", ephemeral=True)
+        return
+    if other_player.game != player.game or interaction.channel != player.game.mainChannel:
+        await interaction.response.send_message(":x: Whisper can only start from the game channel.", ephemeral=True)
+        return
+    if other_player in player.whisperingTo:
+        await interaction.response.send_message(":x: You are already whispering to that player.", ephemeral=True)
+        return
+    name = f"Whisper between {interaction.user.display_name} and {member.display_name}"[:99]
+    channel = await player.game.category.create_text_channel(name)
+    player.game.channels.append(channel)
+    player.game.channelsRemoveByNight.append(channel.id)
+    player.whisperingTo.append(other_player)
+    other_player.whisperingTo.append(player)
+    await channel.set_permissions(player.game.role, read_messages=False, send_messages=False)
+    await channel.set_permissions(player.member, read_messages=True, send_messages=True)
+    await channel.set_permissions(other_player.member, read_messages=True, send_messages=True)
+    await interaction.response.send_message(
+        f":white_check_mark: Whisper channel created: {channel.mention}", ephemeral=True
+    )
+
+
+async def _slash_debug_game(interaction, permission, lobby_id, attribute, value=None):
+    if not await _slash_admin_check(interaction, permission):
+        return
+    games = currentGames.get(interaction.guild.id, [])
+    if not 0 <= lobby_id < len(games):
+        await interaction.response.send_message(":x: Lobby not found.", ephemeral=True)
+        return
+    game = games[lobby_id]
+    if value is None:
+        setattr(game, attribute, True)
+    else:
+        setattr(game, attribute, value)
+    await interaction.response.send_message(
+        f":white_check_mark: Lobby {lobby_id} updated.", ephemeral=True
+    )
+
+
+@client.tree.command(name="skip-votes", description="Skip voting time")
+async def slash_skip_votes(interaction: discord.Interaction, lobby_id: int):
+    if not _mark_handled(interaction):
+        return
+    await _slash_debug_game(interaction, "debug.game.skipVotes", lobby_id, "skipVotingTime")
+
+
+@client.tree.command(name="skip-night", description="Skip the current night")
+async def slash_skip_night(interaction: discord.Interaction, lobby_id: int):
+    if not _mark_handled(interaction):
+        return
+    await _slash_debug_game(interaction, "debug.game.skipNight", lobby_id, "skipNight")
+
+
+@client.tree.command(name="set-weather", description="Set weather intensity")
+async def slash_set_weather(interaction: discord.Interaction, lobby_id: int, intensity: int):
+    if not _mark_handled(interaction):
+        return
+    await _slash_debug_game(
+        interaction, "debug.game.setWeather", lobby_id, "weatherIntensity", intensity
+    )
+
+
+@client.tree.command(name="set-moon", description="Set moon level")
+async def slash_set_moon(interaction: discord.Interaction, lobby_id: int, level: int):
+    if not _mark_handled(interaction):
+        return
+    await _slash_debug_game(interaction, "debug.game.setMoon", lobby_id, "moon", level)
+
+
+@client.tree.command(name="force-start", description="Force-start your lobby")
+async def slash_force_start(interaction: discord.Interaction):
+    if not _mark_handled(interaction):
+        return
+    player = getPlayer(interaction.user, interaction.guild)
+    if player is None or not player.inGame or player.game.started:
+        await interaction.response.send_message(
+            ":x: You need to own an active lobby.", ephemeral=True
+        )
+        return
+    is_owner = getattr(player.game, "owner_id", None) == interaction.user.id
+    is_admin = permissions.memberHasPermission(
+        interaction.user, "admin.game.startGame"
+    )
+    if not (is_owner or is_admin):
+        await interaction.response.send_message(
+            ":closed_lock_with_key: Only the lobby owner or an admin can force start it.",
+            ephemeral=True,
+        )
+        return
+    player.game.startNow = True
+    await interaction.response.send_message(
+        ":white_check_mark: The lobby will start shortly.", ephemeral=True
+    )
+
+
+async def _slash_admin_check(interaction, permission):
+    if not permissions.memberHasPermission(interaction.user, permission):
+        await interaction.response.send_message(
+            ":closed_lock_with_key: You don't have permission to use this command.",
+            ephemeral=True,
+        )
+        return False
+    return True
+
+
+@client.tree.command(name="start-game", description="Start a lobby immediately")
+async def slash_start_game(interaction: discord.Interaction, lobby_id: int):
+    if not _mark_handled(interaction):
+        return
+    games = currentGames.get(interaction.guild.id, [])
+    if not 0 <= lobby_id < len(games):
+        await interaction.response.send_message(":x: Lobby not found.", ephemeral=True)
+        return
+    game = games[lobby_id]
+    if getattr(game, "owner_id", None) != interaction.user.id and not permissions.memberHasPermission(
+        interaction.user, "admin.game.startGame"
+    ):
+        await interaction.response.send_message(
+            ":closed_lock_with_key: Only the lobby owner or an admin can start it.",
+            ephemeral=True,
+        )
+        return
+    game.startNow = True
+    await interaction.response.send_message(
+        f":white_check_mark: Lobby {lobby_id} will start shortly.", ephemeral=True
+    )
+
+
+@client.tree.command(name="cleanup", description="End all running games")
+async def slash_cleanup(interaction: discord.Interaction):
+    if not _mark_handled(interaction):
+        return
+    if not await _slash_admin_check(interaction, "admin.endAllGames"):
+        return
+    for game in list(currentGames.get(interaction.guild.id, [])):
+        await game.cleanUp()
+    await interaction.response.send_message(
+        ":white_check_mark: All games have been stopped.", ephemeral=True
+    )
+
+
+@client.tree.command(name="end-game", description="End one running game")
+async def slash_end_game(interaction: discord.Interaction, lobby_id: int):
+    if not _mark_handled(interaction):
+        return
+    if not await _slash_admin_check(interaction, "admin.endGame"):
+        return
+    games = currentGames.get(interaction.guild.id, [])
+    if not 0 <= lobby_id < len(games):
+        await interaction.response.send_message(":x: Lobby not found.", ephemeral=True)
+        return
+    await games[lobby_id].cleanUp()
+    await interaction.response.send_message(
+        f":white_check_mark: Lobby {lobby_id} has been ended.", ephemeral=True
+    )
+
+
+@client.tree.command(name="kick", description="Remove a player from a game")
+async def slash_kick(interaction: discord.Interaction, member: discord.Member):
+    if not _mark_handled(interaction):
+        return
+    if not await _slash_admin_check(interaction, "admin.game.kick"):
+        return
+    player = getPlayer(member, interaction.guild)
+    if player is None or not player.inGame:
+        await interaction.response.send_message(":x: Player not found in a game.", ephemeral=True)
+        return
+    await player.game.removePlayer(player)
+    await interaction.response.send_message(
+        f":white_check_mark: Removed {member.display_name} from the game.", ephemeral=True
+    )
+
+
+@client.tree.command(name="give-gold", description="Give gold to a player")
+async def slash_give_gold(interaction: discord.Interaction, member: discord.Member, amount: int):
+    if not _mark_handled(interaction):
+        return
+    if not await _slash_admin_check(interaction, "admin.game.giveGold"):
+        return
+    player = getPlayer(member, interaction.guild)
+    if player is None or not player.inGame:
+        await interaction.response.send_message(":x: Player not found in a game.", ephemeral=True)
+        return
+    player.gold += amount
+    await interaction.response.send_message(
+        f":white_check_mark: Gave :coin: {amount} gold to {member.mention}.",
+        ephemeral=True,
+    )
+
+
+@client.tree.command(name="reset-state", description="Reset this server's bot state")
+async def slash_reset_state(interaction: discord.Interaction):
+    if not _mark_handled(interaction):
+        return
+    if not await _slash_admin_check(interaction, "admin.resetState"):
+        return
+    guild_id = interaction.guild.id
+    for game in list(currentGames.get(guild_id, [])):
+        await game.cleanUp()
+    currentGames[guild_id] = []
+    availableGames[guild_id] = []
+    allPlayers[guild_id] = []
+    if guild_id in dataStorage.cache:
+        dataStorage.cache.pop(guild_id, None)
+    await interaction.response.send_message(
+        ":white_check_mark: Server state reset.", ephemeral=True
+    )
 
 
 def getLen(x):

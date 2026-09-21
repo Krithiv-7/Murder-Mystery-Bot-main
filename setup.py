@@ -105,15 +105,24 @@ async def processSetupMessage(message: discord.Message):
 
 
 async def initializeSetup(ctx, gamesRunning):
+    async def send_message(*args, **kwargs):
+        if isinstance(ctx, discord.Interaction):
+            if ctx.response.is_done():
+                return await ctx.followup.send(*args, **kwargs)
+            return await ctx.response.send_message(*args, **kwargs)
+        return await ctx.send(*args, **kwargs)
+
+    guild = ctx.guild
+    author = ctx.user if isinstance(ctx, discord.Interaction) else ctx.author
     if not dataStorage.getGuildData(ctx.guild, "setupStarted", default=False) and not dataStorage.getGuildData(
         ctx.guild, "setupFinished", default=False
     ):
-        dataStorage.setGuildData(ctx.guild, "setupStarted", value=True)
-        dataStorage.setGuildData(ctx.guild, "awaitingSetupMessage", value=False)
-        dataStorage.setGuildData(ctx.guild, "setupFinished", value=False)
-        dataStorage.setGuildData(ctx.guild, "setupProgress", value=0)
-        dataStorage.setGuildData(ctx.guild, "setupMember", value=ctx.author.id)
-        dataStorage.setGuildData(ctx.guild, "setupChannel", value=ctx.channel.id)
+        dataStorage.setGuildData(guild, "setupStarted", value=True)
+        dataStorage.setGuildData(guild, "awaitingSetupMessage", value=False)
+        dataStorage.setGuildData(guild, "setupFinished", value=False)
+        dataStorage.setGuildData(guild, "setupProgress", value=0)
+        dataStorage.setGuildData(guild, "setupMember", value=author.id)
+        dataStorage.setGuildData(guild, "setupChannel", value=ctx.channel.id)
         embed = discord.Embed(
             title=":gear: Murder Mystery setup",
             description=(
@@ -123,11 +132,11 @@ async def initializeSetup(ctx, gamesRunning):
             ),
             color=0x00b8ff,
         )
-        await ctx.send(embed=embed, view=SetupView(ctx.author.id))
+        await send_message(embed=embed, view=SetupView(author.id))
 
     else:
         if gamesRunning:
-            await ctx.send(embed=discord.Embed(title=":x: All games must be ended before running the setup again!",
+            await send_message(embed=discord.Embed(title=":x: All games must be ended before running the setup again!",
                                                description="Use !list to see all running games.\nTo stop all games, use !endAllGames or !cleanup.",
                                                color=0xff0000))
         else:

@@ -34,6 +34,56 @@ def getKeys(d):
     return result
 
 
+class VoteSelect(discord.ui.Select):
+    """Dropdown used for the daytime vote."""
+
+    def __init__(self, game):
+        self.game = game
+        options = [
+            discord.SelectOption(
+                label=player.member.display_name[:100],
+                value=str(player.member.id),
+            )
+            for player in game.players[:25]
+        ]
+        super().__init__(
+            placeholder="Choose a player to execute",
+            options=options,
+            min_values=1,
+            max_values=1,
+        )
+
+    async def callback(self, interaction):
+        target_id = int(self.values[0])
+        target = next(
+            (player.member for player in self.game.players
+             if player.member.id == target_id),
+            None,
+        )
+        if target is None:
+            await interaction.response.send_message(
+                "That player is no longer in the game.", ephemeral=True
+            )
+            return
+        success, message = await self.game.record_vote(
+            interaction.user, target
+        )
+        await interaction.response.send_message(message, ephemeral=True)
+
+
+class VoteView(discord.ui.View):
+    """Interactive voting controls with the text command as fallback."""
+
+    def __init__(self, game):
+        super().__init__(timeout=180)
+        self.game = game
+        self.add_item(VoteSelect(game))
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+
+
 class Game:
     """Represents a Murder Mystery game instance."""
 
@@ -70,6 +120,7 @@ class Game:
         self.extendVotingTime = False
         self.timesVotingTimeExtended = 0
         self.voteTime = False
+        self.statusMessage = None
 
         # fool
         self.foolKilled = False
@@ -91,6 +142,38 @@ class Game:
         if self not in availableGames[self.guild.id]:
             availableGames[self.guild.id].append(self)
 
+    async def record_vote(self, voter_member, target_member):
+        """Record or change a player's vote for any command/UI entry point."""
+        voter = next(
+            (player for player in self.players if player.member == voter_member),
+            None,
+        )
+        target = next(
+            (player for player in self.players if player.member == target_member),
+            None,
+        )
+        if voter is None or target is None or not self.voteTime:
+            return False, "Voting is not available for that player right now."
+        if voter == target:
+            return False, "You can't vote for yourself."
+
+        vote_weight = getattr(getattr(voter, "role", None), "voteWeight", 1)
+        if not voter.voted:
+            target.votes += vote_weight
+            voter.voted = True
+            voter.votedOn = target
+            self.playersThatVoted.append(voter)
+            self.extendVotingTime = True
+            return True, f"You voted for {target.member.display_name}."
+        if voter.votedOn == target:
+            return False, "You already voted for that player."
+
+        voter.votedOn.votes -= vote_weight
+        target.votes += vote_weight
+        voter.votedOn = target
+        self.extendVotingTime = True
+        return True, f"You changed your vote to {target.member.display_name}."
+
     async def _notify_new_game(self):
         """Notify the main guild when a non-debug game is created."""
         if self.guild != mainGuild or self.debug:
@@ -107,6 +190,27 @@ class Game:
                     color=0x00b8ff,
                 ),
             )
+
+    async def update_status(self):
+        """Create or update the single game status message."""
+        if getattr(self, "mainChannel", None) is None:
+            return
+        phase = "Voting" if self.voteTime else ("Night" if self.nightTime else "Day")
+        embed = discord.Embed(
+            title=":scroll: Game status",
+            color=0x00b8ff if phase == "Day" else 0x34495e,
+        )
+        embed.add_field(name="Phase", value=f"{phase} {self.day}", inline=True)
+        embed.add_field(name="Players", value=str(len(self.players)), inline=True)
+        embed.add_field(name="Weather", value=str(self.weatherIntensity), inline=True)
+        embed.add_field(name="Moon", value=str(self.moon), inline=True)
+        try:
+            if self.statusMessage is None:
+                self.statusMessage = await self.mainChannel.send(embed=embed)
+            else:
+                await self.statusMessage.edit(embed=embed)
+        except (discord.HTTPException, AttributeError):
+            self.statusMessage = None
 
     async def _delete_channel(self, channel):
         """Safely delete a channel and remove it from the tracked set."""
@@ -367,6 +471,38 @@ class Game:
         """Attempt to kill a player (may be blocked by items)."""
         shouldDie = True
         bypassItems = kwargs.get("bypassItems", False)
+
+        bodyguard = getattr(getattr(player, "role", None), "protectedBy", None)
+        if bodyguard in self.players and bodyguard is not player and not bypassItems:
+            player.role.protectedBy = None
+            await self.mainChannel.send(embed=discord.Embed(
+                title=f":shield: {bodyguard.member.display_name} died protecting "
+                      f"{player.member.display_name}",
+                description=(
+                    f"{bodyguard.member.display_name}{bodyguard.role.deadString}"
+                ),
+                color=0x3498db,
+            ))
+            await bodyguard.send_private(embed=discord.Embed(
+                title=":shield: You died protecting another player",
+                description="Your bodyguard ability saved them from the attack.",
+                color=0x3498db,
+            ))
+            await self.killPlayer(
+                bodyguard,
+                discord.Embed(
+                    title=f":shield: {bodyguard.member.display_name} died protecting "
+                          f"{player.member.display_name}",
+                    description=f"{bodyguard.member.display_name}{bodyguard.role.deadString}",
+                    color=0x3498db,
+                ),
+                discord.Embed(
+                    title=":skull: You died protecting another player",
+                    color=0x3498db,
+                ),
+                bypassItems=True,
+            )
+            return False
         
         if not bypassItems:
             for item in player.inventory:
@@ -682,6 +818,7 @@ class Game:
 
         self.nightTime = True
         await self.mainChannel.set_permissions(self.role, send_messages=False)
+        await self.update_status()
 
         await self._remove_night_channels()
 
@@ -705,6 +842,10 @@ class Game:
             player.satelliteUsed = False
             player.role.abilityUsed = False
             player.whisperingTo = []
+            if hasattr(player.role, "protectedPlayer"):
+                player.role.protectedPlayer = None
+            if hasattr(player.role, "protectedBy"):
+                player.role.protectedBy = None
             if self.moon == 1:
                 emoji = ":new_moon:"
             elif self.moon == 2:
@@ -956,6 +1097,7 @@ class Game:
             player.voted = False
             player.votes = 0
         self.voteTime = True
+        await self.update_status()
         desc = (
             "Vote on who you think is the murderer with "
             "!vote <@username>.\n\nYou will have 120 seconds to vote."
@@ -967,11 +1109,11 @@ class Game:
                 "if they get voted to be executed they win."
             )
         embed = discord.Embed(
-            title="Vote to execute someone using !vote <player>",
-            description=desc,
+            title="Vote to execute a player",
+            description=desc + "\n\nYou can use the dropdown or the !vote command.",
             color=0x00b8ff,
         )
-        await self.mainChannel.send(embed=embed)
+        await self.mainChannel.send(embed=embed, view=VoteView(self))
 
         extendedTooMuchMessageSent = False
         count = dataStorage.getGuildData(
@@ -1258,6 +1400,7 @@ class Game:
         await self.ensure_main_channel()
         self.nightTime = False
         self.day = self.day + 1
+        await self.update_status()
 
         await self.mainChannel.set_permissions(
             self.role, send_messages=True, read_messages=True
