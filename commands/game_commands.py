@@ -8,6 +8,62 @@ from core.game_state import currentGames
 from core.utils import getPlayer, isSpectating
 
 
+class HostChoiceView(discord.ui.View):
+    """Lets a lobby's host pick to play or spectate their own game.
+
+    Hosts are never auto-joined as players; they get an explicit choice,
+    defaulting to "Join & Play" if they don't respond in time.
+    """
+
+    def __init__(self, game, host_member):
+        super().__init__(timeout=60)
+        self.game = game
+        self.host_member = host_member
+        self.decided = False
+
+    async def interaction_check(self, interaction):
+        if interaction.user.id != self.host_member.id:
+            await interaction.response.send_message(
+                "Only the host who created this lobby can use these buttons.",
+                ephemeral=True,
+            )
+            return False
+        return True
+
+    @discord.ui.button(label="Join & Play", style=discord.ButtonStyle.success, emoji="\u2705")
+    async def join_button(self, interaction, button):
+        self.decided = True
+        await self.game.addPlayer(self.host_member)
+        for item in self.children:
+            item.disabled = True
+        await interaction.response.edit_message(
+            content=":white_check_mark: You joined your lobby as a player.",
+            view=self,
+        )
+        self.stop()
+
+    @discord.ui.button(label="Spectate instead", style=discord.ButtonStyle.secondary, emoji="\U0001F441")
+    async def spectate_button(self, interaction, button):
+        self.decided = True
+        await self.game.addSpectator(self.host_member)
+        for item in self.children:
+            item.disabled = True
+        await interaction.response.edit_message(
+            content=":eye: You're now spectating your own lobby.",
+            view=self,
+        )
+        self.stop()
+
+    async def on_timeout(self):
+        if not self.decided:
+            try:
+                await self.game.addPlayer(self.host_member)
+            except Exception:
+                pass
+        for item in self.children:
+            item.disabled = True
+
+
 class LobbyView(discord.ui.View):
     """Dropdown and buttons for selecting and entering a game lobby."""
 
@@ -385,32 +441,28 @@ class GameCommands(commands.Cog):
             debug = False
 
         from core.utils import createNewGame
-        game = await createNewGame(ctx.message.guild, debug, reason="prefix-create")
+        game = await createNewGame(
+            ctx.message.guild, debug, reason="prefix-create", channel=ctx.channel
+        )
         game.owner_id = ctx.author.id
-        try:
-            await game.addPlayer(ctx.author)
-        except Exception:
-            pass
 
         idx = currentGames[ctx.guild.id].index(game)
         prefix = dataStorage.getGuildData(ctx.guild, 'prefix', default='!')
         if not debug:
             embed = discord.Embed(
-                title="A new lobby has been created!",
+                title="A new lobby has been created! You're the host.",
                 description=(
-                    f"Lobby ID: {idx}. You've been added to this lobby. "
-                    f"Share this ID for others to join with "
-                    f"{prefix}join {idx}"
+                    f"Lobby ID: {idx}. Share this ID for others to join with "
+                    f"{prefix}join {idx}\n\n"
+                    "Choose whether to play or just spectate your lobby:"
                 )
             )
         else:
             embed = discord.Embed(
                 title="A new lobby has been created in debugging mode!",
-                description=(
-                    f"Lobby ID: {idx}. You've been added to this lobby."
-                )
+                description=f"Lobby ID: {idx}. Choose whether to play or spectate:"
             )
-        await ctx.send(embed=embed)
+        await ctx.send(embed=embed, view=HostChoiceView(game, ctx.author))
 
 
 async def setup(client):

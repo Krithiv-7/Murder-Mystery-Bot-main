@@ -96,10 +96,7 @@ class AdminCommands(commands.Cog):
 
     @commands.command(aliases=["stopGame"])
     async def endGame(self, ctx, indexStr=None):
-        """End a specific game by ID."""
-        if not await permissions.hasPermission(ctx, "admin.endGame"):
-            return
-            
+        """End a specific game by ID. Allowed for the lobby's host or admins."""
         if ctx.guild.id not in currentGames:
             currentGames[ctx.guild.id] = []
         try:
@@ -107,13 +104,24 @@ class AdminCommands(commands.Cog):
         except (ValueError, TypeError):
             prefix = dataStorage.getGuildData(ctx.guild, 'prefix', default='!')
             await ctx.send(f":x: Please give a game ID! Use {prefix}list.")
-        else:
-            if len(currentGames[ctx.guild.id]) > index:
-                await ctx.send(f":hourglass: Ending game with ID {index}...")
-                await currentGames[ctx.guild.id][index].cleanUp()
-                await ctx.send(f":white_check_mark: Game with ID {index} has been ended!")
-            else:
-                await ctx.send(":x: There's no game with that index!")
+            return
+
+        if not (0 <= index < len(currentGames[ctx.guild.id])):
+            await ctx.send(":x: There's no game with that index!")
+            return
+
+        game = currentGames[ctx.guild.id][index]
+        is_owner = getattr(game, "owner_id", None) == ctx.author.id
+        has_admin = permissions.memberHasPermission(ctx.author, "admin.endGame")
+        if not (is_owner or has_admin):
+            await ctx.send(
+                ":closed_lock_with_key: Only the lobby's host or an admin can end this game."
+            )
+            return
+
+        await ctx.send(f":hourglass: Ending game with ID {index}...")
+        await game.cleanUp()
+        await ctx.send(f":white_check_mark: Game with ID {index} has been ended!")
 
     @commands.command()
     async def kick(self, ctx, member: discord.Member):

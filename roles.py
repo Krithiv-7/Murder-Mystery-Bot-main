@@ -983,12 +983,8 @@ class broadcast:
         if hasattr(self.receiver, "broadcastChannel"):
             await self.receiver.broadcastChannel.send(embed=self.embed)
         else:
-            self.receiver.broadcastChannel = await self.game.category.create_text_channel("Broadcasts")
-            await self.receiver.broadcastChannel.set_permissions(self.game.role, read_messages=False,
-                                                                 send_messages=False)
-            await self.receiver.broadcastChannel.set_permissions(self.receiver.member, read_messages=True,
-                                                                 send_messages=False)
-            self.game.channels.append(self.receiver.broadcastChannel)
+            from core.player import PrivateChannel
+            self.receiver.broadcastChannel = PrivateChannel(self.receiver.member)
             await self.send()
 
     async def reply(self, content):
@@ -999,9 +995,6 @@ class broadcast:
                                                                       description=f"sender: {self.receiver.role.fancyName}\nreceiver: {self.sender.role.fancyName}\n\n```{usableContent}```",
                                                                       color=0x00ff00))
         else:
-            self.sender.repliesChannel = await self.game.category.create_text_channel("Broadcast replies")
-            await self.sender.repliesChannel.set_permissions(self.game.role, read_messages=False, send_messages=False)
-            await self.sender.repliesChannel.set_permissions(self.sender.member, read_messages=True,
-                                                             send_messages=False)
-            self.game.channels.append(self.sender.repliesChannel)
+            from core.player import PrivateChannel
+            self.sender.repliesChannel = PrivateChannel(self.sender.member)
             await self.reply(content)

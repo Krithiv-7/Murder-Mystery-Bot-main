@@ -84,6 +84,56 @@ class VoteView(discord.ui.View):
             item.disabled = True
 
 
+class GameStatusChannel:
+    """Public status proxy: no per-game channel is created anymore.
+
+    Wraps the guild's configured setup channel (or the channel the lobby
+    was created in) so the rest of the game code can keep calling
+    ``self.mainChannel.send(...)`` without the bot provisioning a
+    dedicated category/role/channel per game. Messages are tagged with
+    the lobby index so concurrent games sharing the channel stay legible.
+    """
+
+    def __init__(self, game, channel_id):
+        self.game = game
+        self.channel_id = channel_id
+        self.id = channel_id
+
+    def _resolve(self):
+        if self.channel_id is None:
+            return None
+        return self.game.guild.get_channel(self.channel_id)
+
+    def _tag(self):
+        lobbies = currentGames.get(self.game.guild.id, [])
+        try:
+            idx = lobbies.index(self.game)
+        except ValueError:
+            idx = "?"
+        return f"Lobby #{idx}"
+
+    async def send(self, *args, **kwargs):
+        channel = self._resolve()
+        if channel is None:
+            return None
+        embed = kwargs.get("embed")
+        if embed is not None:
+            embed.set_footer(text=self._tag())
+        try:
+            return await channel.send(*args, **kwargs)
+        except discord.HTTPException:
+            return None
+
+    async def set_permissions(self, *args, **kwargs):
+        return None
+
+    async def edit(self, *args, **kwargs):
+        return None
+
+    async def purge(self, *args, **kwargs):
+        return None
+
+
 class Game:
     """Represents a Murder Mystery game instance."""
 
@@ -91,6 +141,14 @@ class Game:
         self.guild = guild
         self.debug = debug
         self.owner_id = None
+
+        # no per-game roles/channels are created anymore; comms are DM +
+        # the shared setup channel (see GameStatusChannel/createGame)
+        self.role = None
+        self.spectatorRole = None
+        self.category = None
+        self.voiceChannel = None
+        self.mainChannel = None
 
         # channels & core game info
         self.channels = []
@@ -226,140 +284,30 @@ class Game:
             pass
 
     async def ensure_main_channel(self):
-        """Recreate category/main channel if they were deleted manually."""
-        category_missing = (
-            not hasattr(self, "category") or
-            self.category is None or
-            self.guild.get_channel(self.category.id) is None
-        )
-        if category_missing:
-            self.category = await self.guild.create_category("game")
-            await self.category.set_permissions(
-                self.guild.me, send_messages=True, read_messages=True
-            )
-            await self.category.set_permissions(
-                self.role, read_messages=True, send_messages=True
-            )
-            await self.category.set_permissions(
-                self.guild.default_role, read_messages=False
-            )
-            if hasattr(self, "spectatorRole") and self.spectatorRole is not None:
-                await self.category.set_permissions(
-                    self.spectatorRole, read_messages=False, send_messages=False
-                )
+        """No-op: the status channel resolves lazily, nothing to recreate."""
+        return
 
-        chan_missing = (
-            not hasattr(self, "mainChannel") or
-            self.mainChannel is None or
-            self.guild.get_channel(self.mainChannel.id) is None
-        )
-        if chan_missing:
-            self.mainChannel = await self.category.create_text_channel("Game")
-            if hasattr(self, "spectatorRole") and self.spectatorRole is not None:
-                await self.mainChannel.set_permissions(
-                    self.spectatorRole, read_messages=True, send_messages=False
-                )
-            if self.mainChannel not in self.channels:
-                self.channels.append(self.mainChannel)
+    async def createGame(self, client=None, channel=None):
+        """Register the game; no roles/categories/channels are provisioned.
 
-    async def createGame(self, client=None):
-        """Create game channels and roles.
-
-        The legacy entry point still calls this without a client argument,
-        so the parameter remains optional to preserve compatibility while the
-        modular Game implementation is used by the factory.
+        Public status updates go to the guild's configured setup channel
+        (falling back to the channel the lobby was created in). All private
+        game/role communication happens over DM via ``Player.send_private``.
+        The ``client``/``channel`` parameters remain optional to preserve
+        compatibility with existing call sites.
         """
-        # Determine role position
-        if self.guild != mainGuild:
-            gameRolePosition = self.guild.me.top_role.position - 1
-        else:
-            gameRolePosition = mainGameRolePosition
-            
-        # Create game role
-        self.role = await self.guild.create_role()
-        await self.role.edit(
-            name="Waiting for game to start",
-            permissions=discord.Permissions(
-                read_message_history=True, read_messages=True
-            ),
-            hoist=True
+        status_channel_id = dataStorage.getGuildData(self.guild, "setupChannel")
+        status_channel = (
+            self.guild.get_channel(status_channel_id) if status_channel_id else None
         )
-        try:
-            await self.role.edit(position=gameRolePosition)
-        except discord.HTTPException:
-            pass
+        if status_channel is None and channel is not None:
+            status_channel = channel
 
-        # Create spectator role
-        self.spectatorRole = await self.guild.create_role()
-        if self.guild != mainGuild:
-            gameRolePosition = self.guild.me.top_role.position - 1
-        else:
-            gameRolePosition = mainGameRolePosition - 1
-        await self.spectatorRole.edit(
-            name="Spectator",
-            permissions=discord.Permissions(
-                read_message_history=True, read_messages=True
-            ),
-            hoist=True
+        self.mainChannel = GameStatusChannel(
+            self, getattr(status_channel, "id", None)
         )
-        try:
-            await self.spectatorRole.edit(position=gameRolePosition)
-        except discord.HTTPException:
-            pass
-            
-        # Set join channel permissions
-        if dataStorage.getGuildData(self.guild, "useJoinChannel"):
-            join_ch = self.guild.get_channel(
-                dataStorage.getGuildData(self.guild, "joinChannel")
-            )
-            if join_ch is not None:
-                await join_ch.set_permissions(self.role, read_messages=False)
 
-        # Create category
-        self.category = await self.guild.create_category("game")
-        try:
-            await self.category.edit(position=0)
-        except Exception:
-            pass
-        await self.category.set_permissions(
-            self.guild.me, send_messages=True, read_messages=True
-        )
-        await self.category.set_permissions(
-            self.role, read_messages=True, send_messages=True
-        )
-        await self.category.set_permissions(
-            self.guild.default_role, read_messages=False
-        )
-        await self.category.set_permissions(
-            self.spectatorRole, read_messages=False, send_messages=False
-        )
-        try:
-            await asyncio.sleep(0.5)
-            await self.category.edit(position=0)
-        except Exception:
-            pass
-
-        # Create main channel
-        self.mainChannel = await self.category.create_text_channel("Game")
-        await self.mainChannel.set_permissions(
-            self.spectatorRole, read_messages=True, send_messages=False
-        )
-        self.channels.append(self.mainChannel)
-
-        # Create voice channel if enabled
-        self.voiceChannel = None
-        if dataStorage.getGuildData(self.guild, "gameVoiceChannel", default=False):
-            self.voiceChannel = await self.category.create_voice_channel("Game")
-            await self.voiceChannel.set_permissions(
-                self.guild.default_role, view_channel=False
-            )
-            await self.voiceChannel.set_permissions(self.role, view_channel=True)
-            self.channels.append(self.voiceChannel)
-
-        # Register game
         self._register_game()
-
-        # Notify main guild
         await self._notify_new_game()
         print(f"New game in guild {self.guild.id} ({self.guild.member_count} members)")
 
@@ -371,8 +319,6 @@ class Game:
         if self.guild.id not in allPlayers:
             allPlayers[self.guild.id] = []
         allPlayers[self.guild.id].append(newPlayer)
-        
-        await member.add_roles(self.role)
 
         min_players = dataStorage.getGuildData(
             self.guild, "minPlayers", default=GAME_DEFAULTS["minPlayers"]
@@ -403,7 +349,6 @@ class Game:
     async def addSpectator(self, member):
         """Add a spectator to the game."""
         self.spectators.append(member)
-        await member.add_roles(self.spectatorRole)
         await self.mainChannel.send(
             f"{member.mention}",
             embed=discord.Embed(
@@ -417,7 +362,6 @@ class Game:
         """Remove a spectator from the game."""
         if member in self.spectators:
             self.spectators.remove(member)
-            await member.remove_roles(self.spectatorRole)
 
     async def removePlayer(self, player, **kwargs):
         """Remove a player from the game."""
@@ -627,37 +571,6 @@ class Game:
         random.shuffle(self.players)
         self.started = True
         self.day = 0
-        
-        await self.role.edit(
-            permissions=discord.Permissions(
-                read_message_history=True, read_messages=False
-            )
-        )
-        
-        # Set permissions on all channels
-        for channel in self.guild.channels:
-            if self.voiceChannel is not None:
-                if channel != self.mainChannel and channel.id != self.voiceChannel.id:
-                    try:
-                        await channel.set_permissions(
-                            self.role, read_messages=False
-                        )
-                    except discord.HTTPException:
-                        pass
-            else:
-                if channel != self.mainChannel:
-                    try:
-                        await channel.set_permissions(
-                            self.role, read_messages=False
-                        )
-                    except discord.HTTPException:
-                        pass
-
-        await self.mainChannel.set_permissions(
-            self.role, read_messages=True, send_messages=True
-        )
-        await self.mainChannel.edit(name="Day time")
-        await self.role.edit(name="In game")
 
         # Assign roles
         playersToGiveRolesTo = randomizeList(self.players.copy())
@@ -717,7 +630,8 @@ class Game:
             name="Good luck!",
             value="Your role will be revealed at night."
         )
-        await self.mainChannel.send(f"{self.role.mention}", embed=embed)
+        mentions = " ".join(p.member.mention for p in self.players)
+        await self.mainChannel.send(mentions, embed=embed)
         
         if not self.debug:
             await asyncio.sleep(15)
@@ -1677,12 +1591,6 @@ class Game:
 
     async def stopGame(self):
         """Stop the game, update stats/XP, and clean up."""
-        try:
-            if getattr(self, "role", None) is not None:
-                await self.role.delete()
-        except Exception:
-            pass
-
         if not self.foolWin:
             if self.victory:
                 embed = discord.Embed(

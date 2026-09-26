@@ -16,25 +16,14 @@ class DummyModernGame:
         self.debug = debug
         self.created = False
 
-    async def createGame(self, client=None):
+    async def createGame(self, client=None, channel=None):
         self.created = True
-
-
-class DummyLegacyGame:
-    def __init__(self, guild, debug):
-        self.guild = guild
-        self.debug = debug
-
-    async def createGame(self):
-        return None
 
 
 def test_createNewGame_uses_modular_game_factory():
     original_modern = core_game_module.Game
-    original_legacy = bot.game
 
     core_game_module.Game = DummyModernGame
-    bot.game = DummyLegacyGame
 
     try:
         async def run_test():
@@ -45,7 +34,6 @@ def test_createNewGame_uses_modular_game_factory():
         asyncio.run(run_test())
     finally:
         core_game_module.Game = original_modern
-        bot.game = original_legacy
 
 
 def test_removePlayer_handles_stale_state_without_crashing():
@@ -146,7 +134,7 @@ def test_core_utils_create_new_game():
             self.guild = guild
             self.debug = debug
 
-        async def createGame(self, client=None):
+        async def createGame(self, client=None, channel=None):
             nonlocal created
             created = True
 

@@ -42,7 +42,7 @@ def getPlayer(member, guild):
     return None
 
 
-async def createNewGame(guild_or_client, debug_or_guild=False, debug=False, reason: str = "explicit"):
+async def createNewGame(guild_or_client, debug_or_guild=False, debug=False, reason: str = "explicit", channel=None):
     """Create and initialize a new Game instance."""
     from core.game import Game
 
@@ -53,7 +53,7 @@ async def createNewGame(guild_or_client, debug_or_guild=False, debug=False, reas
     )
 
     newGame = Game(guild, actual_debug)
-    await newGame.createGame(client=client)
+    await newGame.createGame(client=client, channel=channel)
     return newGame
 
 
