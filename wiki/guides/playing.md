@@ -9,7 +9,7 @@ Also see [roles](roles.md), [items](items.md), [commands](commands.md), and [ser
 ## Joining a game
 
 - Create a lobby with `!create` or `/create`. The host message has **Join & Play**, **Spectate instead**, and **Allow DMs from this bot**.
-- Press **Allow DMs from this bot** once. That is the user-install authorization. Night actions and your role are sent as DMs after that. Joining does not send a separate DM.
+- Press **Allow DMs from this bot** if the join DM does not arrive. That button is the failsafe. Night actions and your role are still sent as DMs.
 - Share the lobby code, such as `MM-7F2A`. Others join with `!join MM-7F2A` or `/join`. Use `!list` or `/list` to see codes.
 - A person can only be in one lobby, and only once. Use `!leave` before joining another.
 - Discord administrators add `-overwriteAdminWarning` when joining, for example `!join MM-7F2A -overwriteAdminWarning`.

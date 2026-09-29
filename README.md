@@ -147,5 +147,5 @@ make run
 
 - `ERROR: DISCORD_TOKEN is missing.` Add the token to `.env` and run `docker compose up -d` again.
 - The bot is online but ignores `!` commands. Enable the Message Content intent, and check that an admin has not disabled the command in the settings panel.
-- A player never receives role DMs. They need to press **Allow DMs from this bot** on the lobby message. That is a user install (`integration_type=1`, `scope=applications.commands`), not a second message from the bot.
+- A player never receives role DMs. Joining sends a DM. If Discord blocks it, the status channel mentions that player and shows **Allow DMs from this bot**.
 - `docker compose ps` shows the container as unhealthy. Wait for the start period, then check `docker compose logs -f bot`. The health check only looks at a heartbeat file written by the running bot.

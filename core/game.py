@@ -338,6 +338,7 @@ class Game:
         if self.guild.id not in allPlayers:
             allPlayers[self.guild.id] = []
         allPlayers[self.guild.id].append(newPlayer)
+        await self._welcome_player(newPlayer)
 
         min_players = dataStorage.getGuildData(
             self.guild, "minPlayers", default=GAME_DEFAULTS["minPlayers"]
@@ -365,6 +366,36 @@ class Game:
                 f"{newPlayer.member.mention}", embed=embed
             )
         return newPlayer
+
+    async def _welcome_player(self, player):
+        """DM the new player. If that fails, mention them with the DM button."""
+        sent = await player.send_private(
+            embed=discord.Embed(
+                title=f":envelope: You joined {self.code}",
+                description=(
+                    "Your role and night actions will arrive in this chat. "
+                    "Keep it open during the game."
+                ),
+                color=0x6c5ce7,
+            )
+        )
+        if sent is not None:
+            return
+        from core.action_views import application_id, dm_link_view
+
+        app_id = application_id(self.guild)
+        await self.mainChannel.send(
+            content=player.member.mention,
+            embed=discord.Embed(
+                title=":mailbox: I couldn't message you",
+                description=(
+                    "You are in the lobby, but Discord blocked the DM. "
+                    "Press **Allow DMs from this bot** so your role can be delivered."
+                ),
+                color=0xe67e22,
+            ),
+            view=dm_link_view(app_id) if app_id else None,
+        )
 
     async def addSpectator(self, member):
         """Add a spectator to the game."""

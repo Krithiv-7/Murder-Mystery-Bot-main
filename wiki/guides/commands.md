@@ -18,7 +18,7 @@ In-game role lists are also available with `!wiki` and `/wiki`.
 | Force start | `!forceStart` | `/force-start` | lobby host or admin |
 | Start a code | `!startGame <code>` | `/start-game` | lobby host or `admin.game.startGame` |
 
-`!create` shows the code plus **Join & Play**, **Spectate instead**, and **Allow DMs from this bot**. If only one lobby is open, `!spectate` can omit the code. Discord administrators join with `-overwriteAdminWarning`.
+`!create` shows the code plus **Join & Play**, **Spectate instead**, and **Allow DMs from this bot**. Joining also sends a DM. If that DM is blocked, the status channel mentions the player and shows the same button. If only one lobby is open, `!spectate` can omit the code. Discord administrators join with `-overwriteAdminWarning`.
 
 ## During a game
 
