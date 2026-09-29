@@ -26,12 +26,9 @@ if ! command -v pip3 &> /dev/null; then
     exit 1
 fi
 
-# Check if token.txt exists
-if [ ! -f "token.txt" ]; then
-    echo "WARNING: token.txt not found!"
-    echo "Please create token.txt and add your Discord bot token."
+if [ ! -f ".env" ]; then
+    echo "WARNING: .env not found. Copy .env.example to .env and set DISCORD_TOKEN."
     echo ""
-    read -p "Press enter to continue..."
 fi
 
 echo "Creating virtual environment (venv)..."
@@ -52,7 +49,7 @@ python -m pip install --upgrade pip
 if [ -f "requirements.txt" ]; then
     pip install -r requirements.txt
 else
-    pip install discord.py pymongo dnspython
+    pip install "discord.py>=2.2"
 fi
 
 if [ $? -ne 0 ]; then

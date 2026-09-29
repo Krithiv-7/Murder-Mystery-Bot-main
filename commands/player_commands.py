@@ -16,50 +16,40 @@ class PlayerCommands(commands.Cog):
         self.client = client
 
     @commands.command()
-    async def whisper(self, ctx, member: discord.Member):
-        """Start a private whisper channel with another player."""
+    async def whisper(self, ctx, member: discord.Member, *, message: str):
+        """Send a private DM whisper to another player in your game."""
         player = getPlayer(ctx.author, ctx.message.guild)
         whisperPlayer = getPlayer(member, ctx.message.guild)
-        
+
         if player is None or not player.inGame:
             await ctx.send(":x: You're not in a game!")
             return
-            
+
         if whisperPlayer is None or not whisperPlayer.inGame:
             await ctx.send(":x: That player is not in game!")
             return
-            
+
         if whisperPlayer not in player.game.players:
             await ctx.send(":x: That player is not in the same game as you!")
             return
-            
-        if ctx.channel != player.game.mainChannel:
-            await ctx.send(":x: You can't use that here!")
+
+        if player.game.nightTime:
+            await ctx.send(":x: You can't whisper during night time!")
             return
-            
-        if whisperPlayer in player.whisperingTo:
-            await ctx.send(":x: You're already whispering to that player!")
+
+        try:
+            await whisperPlayer.member.send(embed=discord.Embed(
+                title=f":speech_balloon: Whisper from {player.member.display_name}",
+                description=message,
+                color=0x0088ff
+            ))
+        except discord.HTTPException:
+            await ctx.send(":x: Couldn't deliver the whisper - they may have DMs disabled.")
             return
-            
-        # Create whisper channel
-        name = f"Whisper between {player.member.display_name} and {whisperPlayer.member.display_name}"
-        if len(name) >= 100:
-            name = "Whisper"
-            
-        channel = await player.game.category.create_text_channel(name)
-        player.game.channels.append(channel)
-        player.game.channelsRemoveByNight.append(channel.id)
-        player.whisperingTo.append(whisperPlayer)
-        whisperPlayer.whisperingTo.append(player)
-        
-        await channel.set_permissions(player.game.role, read_messages=False, send_messages=False)
-        await channel.set_permissions(player.member, read_messages=True, send_messages=True)
-        await channel.set_permissions(whisperPlayer.member, read_messages=True, send_messages=True)
 
         await ctx.send(embed=discord.Embed(
-            title=f"{player.member.display_name} and {whisperPlayer.member.display_name} are now whispering",
-            description="A private channel has been created. It will be deleted at night.",
-            color=0x0088ff
+            title=f":white_check_mark: Whisper sent to {whisperPlayer.member.display_name}",
+            color=0x00ff00
         ))
 
     @commands.command()
@@ -95,29 +85,8 @@ class PlayerCommands(commands.Cog):
             await ctx.send(":x: You can't vote on yourself!")
             return
             
-        if not player.voted:
-            votedPlayer.votes += 1
-            player.voted = True
-            player.votedOn = votedPlayer
-            await ctx.send(
-                f"{ctx.author.mention} voted to execute {votedPlayer.member.mention}! "
-                f"They're now at **{votedPlayer.votes}** votes."
-            )
-            player.game.playersThatVoted.append(player)
-            player.game.extendVotingTime = True
-        else:
-            if player.votedOn != votedPlayer:
-                player.votedOn.votes -= 1
-                votedPlayer.votes += 1
-                await ctx.send(
-                    f"{ctx.author.mention} changed their vote from "
-                    f"{player.votedOn.member.mention} to {votedPlayer.member.mention}! "
-                    f"They're now at **{votedPlayer.votes}** votes."
-                )
-                player.votedOn = votedPlayer
-                player.game.extendVotingTime = True
-            else:
-                await ctx.send(":x: You already voted on that player!")
+        _, result = await player.game.record_vote(ctx.author, votedMember)
+        await ctx.send(result)
 
     @commands.command()
     async def use(self, ctx, itemName="", *, arg=None):

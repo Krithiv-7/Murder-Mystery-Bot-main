@@ -11,7 +11,4 @@ from .config import (
 )
 from .player import Player
 from .game import Game, game, randomizeList, getKeys
-from .utils import (
-    getPlayer, createNewGame, isSpectating, getLen,
-    getAvailableGame, findGameByPlayer
-)
+from .utils import getPlayer, createNewGame, isSpectating

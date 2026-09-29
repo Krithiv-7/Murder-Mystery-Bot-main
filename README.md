@@ -1,124 +1,151 @@
-# Murder-Mystery-Bot
-A town of salem/mafia-like game inside Discord! This bot brings the classic social deduction game experience to your Discord server.
+# Murder Mystery Bot
 
-Invite the bot to your server: https://discord.com/oauth2/authorize?client_id=1452886075621249024&permissions=268823632&integration_type=0&scope=bot%20applications.commands
+A self-hostable Discord game of social deduction. One bot process can run many games in many servers at the same time. Server data stays on your machine in SQLite.
 
-Top.gg Listing: https://top.gg/bot/1452886075621249024
+Guild invite: https://discord.com/oauth2/authorize?client_id=1452886075621249024&permissions=137439332416&integration_type=0&scope=applications.commands+bot
 
-Join our support server: https://discord.gg/kriti
-GitHub repository: https://github.com/Krithiv-7/Murder-Mystery-Bot-main
+`client_id` is the Discord application id. The scope always includes `applications.commands`. In the developer portal, enable the **Message Content** and **Server Members** intents before inviting the bot.
 
-# Running the bot yourself
-If you need help, join our Discord server: https://discord.gg/kriti
+Support server: https://discord.gg/kriti
 
-## Support & Maintenance
-- Actively maintained: Issues and improvements are addressed regularly.
-- Found a bug? Please open an issue on the repository or join the support server for help.
-- Suggestions welcome: create an issue or drop by the server to discuss.
+## Features
 
-## Prerequisites
-- Python 3.7 or higher (Python 3.13+ recommended)
-- pip (Python package manager)
+- Lobbies, day and night rounds, voting, and win conditions
+- Roles including murderer, doctor, detective, banker, thief, jailer, broadcaster, fool, hunter, werewolf, cupid, mayor, bodyguard, and medium
+- Prefix commands (`!join`) and slash commands (`/join`) that share the same game rules
+- Admin settings panel for timers, disabled commands, prefix, and live games
+- Wildcard permissions such as `admin.*` and `member.join`
 
-## Quick Setup (Recommended)
+## Requirements
 
-### Windows
-1. Create your Discord bot and get the token (see below)
-2. Paste your bot token into `token.txt`
-3. Double-click `setup.bat` to install dependencies
-4. Double-click `start.bat` to start the bot
+- Docker, or Python 3.11+
+- A Discord application with the Message Content and Server Members intents enabled
+- A bot token
 
-### Linux/macOS
-1. Create your Discord bot and get the token (see below)
-2. Paste your bot token into `token.txt`
-3. Run setup script:
-   ```bash
-   chmod +x setup.sh start.sh
-   ./setup.sh
-   ```
-4. Start the bot:
-   ```bash
-   ./start.sh
-   ```
-5. For production (keeps running in background):
-   ```bash
-   screen -S discord-bot ./start.sh
-   # Press Ctrl+A then D to detach from screen
-   # To reattach: screen -r discord-bot
-   ```
+## Quick start
 
-## Manual Setup Instructions
+```bash
+git clone https://github.com/Krithiv-7/Murder-Mystery-Bot-main.git
+cd Murder-Mystery-Bot-main
+cp .env.example .env
+```
 
-1. **Install Python** from https://www.python.org/
-   - On Windows, make sure to check "Add python to PATH" during installation
+Put your token in `.env`:
 
-2. **Install required libraries**:
-   ```bash
-   pip install discord.py pymongo dnspython
-   ```
+```env
+DISCORD_TOKEN=your-token
+```
 
-3. **Create a Discord Bot**:
-   - Go to https://discord.com/developers/applications
-   - Click "New Application" and give it a name
-   - Go to the "Bot" tab and click "Add Bot"
-   - Click "Reset Token" and copy the token
-   - Paste the token into `token.txt` in the project directory
-   - Under "Privileged Gateway Intents", enable:
-     - Presence Intent
-     - Server Members Intent
-     - Message Content Intent
+Start the bot:
 
-4. **Run the bot**:
-   ```bash
-   py bot.py
-   ```
-   Or on macOS/Linux:
-   ```bash
-   python3 bot.py
-   ```
-   
-   If successful, you'll see: `Logged in as (bot's username)`
+```bash
+docker compose up -d
+docker compose logs -f bot
+```
 
-5. **Invite the bot to your server**:
-   - Use this invite link (replace CLIENT_ID with your bot's client ID):
-   ```
-   https://discord.com/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=268823632&integration_type=0&scope=bot
-   ```
+Stop, restart, and update:
 
+```bash
+docker compose down
+docker compose restart
+git pull
+docker compose build --pull
+docker compose up -d
+```
 
-# Database
-This bot can either use a json file or MongoDB as a database! By default it uses json, but if you'd like to use mongoDB then paste your mongoDB login key in mongoDBLoginInfo.txt and in bot.py set LocalStorage to false. The bot will use "discord" as the database name and "murder-mystery" as the collection name, but you can change them in datastorage.py on line 25 and 26 if you want.
+Other useful commands:
 
-# Important Notes
+```bash
+docker compose ps
+docker compose logs -f
+```
 
-ℹ️ **This bot primarily uses the discord.py commands library** (prefix commands), and now includes basic slash commands like `/ping` and `/help`. Make sure the invite scope includes `applications.commands`.
+Persistent files live in `./data` (the SQLite database and heartbeat). The database uses WAL mode and an in-memory cache so many servers can read settings without waiting on disk. Backups are written to `./backups`. Logs are written to `./logs`. Those directories are mounted into the container, so `docker compose down` does not delete them.
 
-⚠️ **All Privileged Intents must be enabled** in the Discord Developer Portal under the Bot settings:
-- Presence Intent
-- Server Members Intent  
-- Message Content Intent
+## Documentation
 
-⚠️ **Admin join warning:** Discord administrators can see hidden channels. To join a lobby with admin permissions, run `!join <ID> -overwriteAdminWarning`.
+Player and operator guides in this repository:
 
-🔒 **Starting lobbies:** `!startGame <ID>` can only be used by the lobby owner or an admin. `!forceStart` (`!ownerstart` / `!fs`) remains an owner/admin shortcut for the active lobby.
+- [How to play](wiki/guides/playing.md)
+- [Commands](wiki/guides/commands.md)
+- [Roles](wiki/guides/roles.md)
+- [Items](wiki/guides/items.md)
+- [Server settings](wiki/guides/settings.md)
+- [Privacy](wiki/guides/privacy.md) and [terms](wiki/guides/terms.md)
 
-💡 **For production deployment**, consider using:
-- `screen` or `tmux` on Linux to keep the bot running
-- PM2 for process management
-- Docker for containerization
+## Commands
 
-# Contributing
+Lobby codes look like `MM-7F2A`. Use the code from `!list` or `/list`.
 
-Feel free to fork this bot and make improvements! If you create a public fork, please provide credit and let us know - we'd love to see what you build!
+| Action | Prefix | Slash |
+| --- | --- | --- |
+| Create a lobby | `!create` | `/create` |
+| List lobbies | `!list` | `/list` |
+| Join | `!join MM-7F2A` | `/join` |
+| Spectate | `!spectate MM-7F2A` | `/spectate` |
+| Help | `!help` | `/help` |
+| Settings panel | `!settingspanel` | `/settingspanel` |
+| Bot status | `!status` | `/status` |
 
+`!help` and `/help` show Murder Mystery Bot v2.0.0 plus the command catalog. `!status` is limited to people with `admin.*` or Discord administrator.
 
-# Credits
-- Original Creator: **Ikbenmathijs**
-- Current Fork Maintainer: **Krithiv-7**
+## Permissions
 
-# License
-This project is licensed under the **MIT License**. See [LICENSE](LICENSE) for details.
+Permissions are a tree. A stored `admin.*` grant allows every admin command. Discord administrators bypass the tree. Grants can be given to a member or a role. Removing a permission from a member blocks that permission even when the server default would have allowed it.
 
-# Code of Conduct
-We follow a community-friendly code of conduct. Please read and adhere to our [Code of Conduct](CODE_OF_CONDUCT.md).
+```text
+!addPermission @User member.join
+!removePermission @Role admin.settings
+!permissions @User
+```
 
+Only people who already have the matching admin permission can grant, revoke, reset a server, force-start or end games, or change configuration.
+
+## Configuration
+
+Environment defaults live in `.env`. Each server can override the prefix and the game timers from `!settings` or the settings panel.
+
+| Variable | Purpose |
+| --- | --- |
+| `DISCORD_TOKEN` | Bot token. Required. |
+| `DATABASE_URL` | Default `sqlite:///data/bot.sqlite` |
+| `BOT_PREFIX` | Default prefix when a server has not chosen one |
+| `LOG_LEVEL` | `INFO` by default |
+| `MMB_STORAGE` | `sqlite` (default), `json`, or `mongo` |
+| `MMB_TESTING_BOT` | `true` skips official-server-only setup |
+
+MongoDB is optional. Install it with `pip install pymongo dnspython` and set `MMB_STORAGE=mongo`. The default Docker setup does not run MongoDB.
+
+## Backup and restore
+
+```bash
+docker compose exec bot python -m core.cli backup
+```
+
+That writes `backups/backup-YYYY-MM-DD.sqlite`. To restore, stop the bot, replace `data/bot.sqlite` with that file, and start the bot again.
+
+Import an older `data.json` without deleting it:
+
+```bash
+docker compose exec bot python -m core.cli migrate
+```
+
+The first SQLite startup also imports `data.json` automatically when the database has no guilds yet.
+
+## Development
+
+```bash
+make install
+make test
+make lint
+make run
+```
+
+`make run` uses the local Python environment. `make docker` starts Compose. Tests do not connect to Discord.
+
+## Troubleshooting
+
+- `ERROR: DISCORD_TOKEN is missing.` Add the token to `.env` and run `docker compose up -d` again.
+- The bot is online but ignores `!` commands. Enable the Message Content intent, and check that an admin has not disabled the command in the settings panel.
+- A player never receives role DMs. Joining sends a DM. If Discord blocks it, the status channel mentions that player and shows **Allow DMs from this bot**.
+- `docker compose ps` shows the container as unhealthy. Wait for the start period, then check `docker compose logs -f bot`. The health check only looks at a heartbeat file written by the running bot.

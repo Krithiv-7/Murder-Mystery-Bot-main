@@ -1,5 +1,7 @@
 # Python
 __pycache__/
+.mypy_cache/
+.pytest_cache/
 *.py[cod]
 *$py.class
 *.so
@@ -27,6 +29,12 @@ wheels/
 # Sensitive files
 token.txt
 mongoDBLoginInfo.txt
+.env
+
+# Persistent runtime data
+data/
+backups/
+logs/
 
 # Database
 *.db

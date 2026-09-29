@@ -3,6 +3,7 @@ import random
 from roles import broadcast
 import objectives
 import dataStorage
+from core.player import PrivateChannel
 
 
 def getItems(**kwargs):
@@ -406,15 +407,9 @@ class satellite:
                 if self.onlyNightTime:
                     if self.player.game.nightTime:
                         if not self.player.satelliteUsed:
-                            self.channel = await self.player.game.category.create_text_channel("satellite")
+                            self.channel = PrivateChannel(self.player.member)
                             self.player.satelliteChannel = self.channel
                             self.player.currentSatellite = self
-                            await self.channel.set_permissions(self.player.game.role, read_messages=False,
-                                                               send_messages=False)
-                            await self.channel.set_permissions(self.player.member, read_messages=True,
-                                                               send_messages=True)
-                            self.player.game.channels.append(self.channel)
-                            self.player.game.channelsRemoveByMorning.append(self.channel)
                             embed = self.addRolesToEmbed(discord.Embed(title="Choose a role to send a message to",
                                                                        description="Type a number bellow to select a role and the person with that role will receive a message of your choice.",
                                                                        color=0x19ff00))
@@ -495,8 +490,6 @@ class satellite:
                     if self.messageTo in self.player.game.players:
                         bc = broadcast(message.content, self.player, self.messageTo, False)
                         await bc.send()
-                        await self.player.satelliteChannel.set_permissions(self.player.member, read_messages=True,
-                                                                           send_messages=False)
                         m = message.content.replace("```", "")
                         await self.player.satelliteChannel.send(embed=discord.Embed(title="Broadcast sent!",
                                                                                     description=f"The {self.messageTo.role.fancyName} will now receive the following message: \n \n ```{m}```"))
@@ -504,6 +497,7 @@ class satellite:
                         self.uses -= 1
                         if self.uses <= 0:
                             await removeFromInventory(self, self.player)
+                        self.player.currentSatellite = None
                     else:
                         await self.player.satelliteChannel.send(
                             embed=discord.Embed(title="That player is no longer in this game.",
@@ -527,6 +521,7 @@ class satellite:
                                                                                 color=0x19ff00))
                     self.player.satelliteUsed = True
                     await removeFromInventory(self, self.player)
+                    self.player.currentSatellite = None
             else:
                 embed = self.addRolesToEmbed(discord.Embed(title="Choose a role to send a message to",
                                                            description="Type a number bellow to select a role and the person with that role will receive a message of your choice.",
@@ -556,14 +551,9 @@ class dagger:
             if self.uses > 0:
                 if self.onlyNightTime:
                     if self.player.game.nightTime:
-                        self.channel = await self.player.game.category.create_text_channel("Dagger")
+                        self.channel = PrivateChannel(self.player.member)
                         self.player.daggerChannel = self.channel
                         self.player.currentDagger = self
-                        await self.channel.set_permissions(self.player.game.role, read_messages=False,
-                                                           send_messages=False)
-                        await self.channel.set_permissions(self.player.member, read_messages=True, send_messages=True)
-                        self.player.game.channels.append(self.channel)
-                        self.player.game.channelsRemoveByMorning.append(self.channel)
                         embed = self.addPlayersToEmbed(discord.Embed(title="Choose someone to kill",
                                                                      description="Type a number below to kill that player.",
                                                                      color=0xff0b00))
@@ -627,9 +617,7 @@ class dagger:
                             title=f":dagger: You stabbed {self.currentPlayerList[choice].member.display_name}",
                             description="If they don't get healed by the doctor tonight, they will die next morning.",
                             color=0xff0b00))
-                        # set permissions for murderer channel
-                        await self.player.daggerChannel.set_permissions(self.player.member, read_messages=True,
-                                                                       send_messages=False)
+                        self.player.currentDagger = None
 
                     else:
                         await self.player.daggerChannel.send(

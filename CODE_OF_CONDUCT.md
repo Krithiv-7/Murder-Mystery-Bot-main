@@ -22,7 +22,7 @@ Project maintainers are responsible for clarifying and enforcing our standards o
 ## Enforcement
 Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the maintainers. You can contact us by opening an issue or via our support server: https://discord.gg/kriti.
 
-All complaints will be reviewed and investigated promptly and fairly.
+Reports will be reviewed by the maintainers when practicable. The maintainers may not be able to investigate every report or provide individual updates.
 
 ## Enforcement Guidelines
 Maintainers will follow these guidelines in determining the consequences for any action they deem in violation of this Code of Conduct:

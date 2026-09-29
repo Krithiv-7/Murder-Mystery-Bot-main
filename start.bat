@@ -4,10 +4,9 @@ echo Murder Mystery Bot - Starting
 echo ================================
 echo.
 
-REM Check if token.txt exists
-if not exist "token.txt" (
-    echo ERROR: token.txt not found!
-    echo Please create token.txt and add your Discord bot token.
+if not exist ".env" if "%DISCORD_TOKEN%"=="" if not exist "token.txt" (
+    echo ERROR: No bot token found.
+    echo Copy .env.example to .env and set DISCORD_TOKEN.
     echo.
     pause
     exit /b 1
