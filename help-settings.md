@@ -1,15 +1,15 @@
 # Murder‑Mystery‑Bot — Server Settings Reference
 
-Last updated: September 21, 2026
+Last updated: September 29, 2026
 
-The `!settings` command lets admins view and change server‑level configuration used by the game.
+Admins can change server configuration with `!settings` or the button panel `!settingspanel` / `/settingspanel`. The panel edits the same timer values, plus the prefix, disabled commands, and live lobbies.
 
 ## Viewing Settings
 - `!settings`: Shows the current values and toggle states.
 
 ## Numeric Settings
-- `minPlayers <int>`: Minimum players required to start a game (≥ 4)
-- `maxPlayers <int>`: Maximum players allowed in a game (≥ 4 and > minPlayers)
+- `minPlayers <int>`: Minimum players required to start a game (at least 3)
+- `maxPlayers <int>`: Maximum players allowed in a game (must be at least `minPlayers`)
 - `preGameTimer <int>`: Seconds to wait before starting after threshold reached (≥ 5)
 - `votingTime <int>`: Seconds for daytime voting (≥ 5)
 - `nightTimeTimer <int>`: Seconds for night phase (≥ 5)
@@ -32,7 +32,8 @@ Usage examples:
 - `!settings kickOfflinePlayers`
 
 ## Prefix
-- `!prefix <new>`: Change the bot prefix (≤ 7 chars; admin permission required)
+- `!prefix <new>`: Change the bot prefix (≤ 7 characters). The default comes from `BOT_PREFIX` in `.env` until a server sets its own.
+- `!settingspanel`: Change minimum and maximum players, pre-game, voting, and night timers from one form. Timers must be at least 5 seconds, and the minimum player count must be at least 3.
 
 ## Permissions
 - Some settings require specific Discord permissions (e.g., Move Members).

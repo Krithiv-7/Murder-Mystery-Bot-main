@@ -17,17 +17,15 @@ echo Python found!
 python --version
 echo.
 
-REM Check if token.txt exists
-if not exist "token.txt" (
-    echo WARNING: token.txt not found!
-    echo Please create token.txt and add your Discord bot token.
+if not exist ".env" (
+    echo WARNING: .env not found. Copy .env.example to .env and set DISCORD_TOKEN.
     echo.
     pause
 )
 
 echo Installing dependencies...
 python -m pip install --upgrade pip
-pip install discord.py pymongo dnspython
+pip install -r requirements.txt
 
 if errorlevel 1 (
     echo.

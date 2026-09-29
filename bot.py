@@ -16,8 +16,8 @@ initializeDataStorage(localStorage)
 logger.info("Loading commands")
 logger.info("Loading game systems")
 
+from core.utils import createNewGame
 from discordbot.client import client
-from discordbot.helpers import createNewGame
 import discordbot.events  # noqa: F401
 import discordbot.legacy  # noqa: F401
 import discordbot.debug_commands  # noqa: F401
@@ -25,22 +25,6 @@ import discordbot.misc_commands  # noqa: F401
 import discordbot.help_commands  # noqa: F401
 import discordbot.permission_commands  # noqa: F401
 import discordbot.slash_commands  # noqa: F401
-
-LEGACY_COMMANDS = [
-    "join", "list", "spectate", "create", "creategame",
-    "resetstate", "startgame", "cleanup", "endgame", "kick", "purge", "givegold",
-    "whisper", "vote", "use", "shop", "balance", "buy", "leave", "forcestart",
-]
-
-
-def _remove_legacy_commands():
-    for name in LEGACY_COMMANDS:
-        cmd = client.get_command(name)
-        if cmd is not None:
-            client.remove_command(name)
-
-
-_remove_legacy_commands()
 
 
 def resolve_token():

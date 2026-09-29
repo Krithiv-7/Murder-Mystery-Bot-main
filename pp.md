@@ -1,6 +1,6 @@
 # Privacy Policy — Murder‑Mystery‑Bot
 
-Last updated: September 21, 2026
+Last updated: September 29, 2026
 
 This Privacy Policy explains what information the Murder-Mystery-Bot (the "Bot") processes and why. It is an operational summary, not legal advice. Self-hosted operators must publish a notice appropriate to their own deployment.
 
@@ -17,7 +17,7 @@ We collect only the minimum data needed to operate the game inside Discord. This
 - Data is received via the Discord API when you use commands or when server administrators configure the Bot.
 
 ## 4. Storage and Retention
-- **Storage options:** Local mode uses `data.json`, rotating JSON backups, and a local disaster-recovery SQLite database. MongoDB mode may store equivalent records in the configured MongoDB deployment (the default database and collection are `discord` and `murder-mystery`).
+- **Storage:** The default store is a SQLite file at `data/bot.sqlite`. It keeps guild settings, player statistics, and permissions. Active games stay in memory and are not written to the database. An older `data.json` file is imported once when the SQLite database is empty, and it is left on disk. MongoDB remains optional when `MMB_STORAGE=mongo`.
 - **Retention:** Active configuration and player progression may remain while the Bot is installed or while the maintainer considers the data necessary for operation. Backups and logs may persist longer according to operational retention. Removing the Bot does not automatically guarantee immediate deletion of every backup.
 - **Deletion requests:** Contact the maintainer through the support server or repository issue tracker with the server ID and user ID involved. Do not include a bot token or other secret. Requests may require confirmation from a server administrator or the affected account.
 
@@ -35,7 +35,7 @@ We collect only the minimum data needed to operate the game inside Discord. This
 - **Opt‑Out:** You can stop using the Bot at any time; server administrators can remove the Bot.
 
 ## 9. Sharing and Third Parties
-- We do not sell personal data. Data is shared only with infrastructure providers (e.g., MongoDB if enabled) strictly to operate the Bot.
+- We do not sell personal data. A self-hosted operator's database stays on their machine unless they opt into MongoDB.
 
 ## 10. Changes to This Policy
 - We may update this Privacy Policy from time to time. The effective date above will change when an update is published. Material changes should be reviewed before continued use.

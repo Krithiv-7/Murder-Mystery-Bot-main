@@ -1,6 +1,6 @@
 # Murder‑Mystery‑Bot — Advanced/Admin Commands
 
-Last updated: September 21, 2026
+Last updated: September 29, 2026
 
 These commands are intended for server admins or moderators. Many require specific permissions as enforced by the bot.
 
@@ -25,17 +25,17 @@ These commands are intended for server admins or moderators. Many require specif
 	- Views a list of all commands. Optionally filter by category.
 
 - `!create` — permission: none
-	- Creates a new lobby and auto-adds you (only if you are not already in a lobby). Debug mode requires `debug.createGame`.
+	- Creates a lobby and shows its code. The host chooses whether to play or spectate. Debug mode requires `debug.createGame`.
 
-- `!join <id>` — permission: `member.join`
-	- Joins a lobby by ID. This command requires an explicit lobby ID and does not create new lobbies.
-	- If you have the Discord Administrator permission, add `-overwriteAdminWarning` to join (for example: `!join 0 -overwriteAdminWarning`).
+- `!join <code>` — permission: `member.join`
+	- Joins a lobby by code, such as `MM-7F2A`. This command does not create a lobby.
+	- Discord administrators add `-overwriteAdminWarning` (for example: `!join MM-7F2A -overwriteAdminWarning`).
 
-- `!spectate <id>` — permission: `member.spectate`
-	- Spectates a game by ID.
+- `!spectate <code>` — permission: `member.spectate`
+	- Spectates a game by code. The code can be omitted when only one lobby is open.
 
 - `!list` — permission: `member.list`
-	- Shows all currently running games and their IDs.
+	- Shows running games and their codes.
 
 - `!level [player]` — permission: `member.levels.level`
 	- Shows the player's level.
@@ -52,7 +52,7 @@ These commands are intended for server admins or moderators. Many require specif
 ## Admin & Moderation
 - `!setup`: Button-based server setup. It configures permissions and optional summaries without creating tutorial or join channels.
 - `!cleanup` (aliases: `!endGames`, `!stopGames`, `!stopAllGames`, `!endAllGames`): End all running games
-- `!endGame <ID>` (alias: `!stopGame`): End a specific game
+- `!endGame <code>` (alias: `!stopGame`): End the lobby with that code
 - `!resetState` — permission: `admin.resetState`
 	- Ends all games for this guild and clears in-memory state (players, lobbies, caches). Useful to recover from stuck state.
 - `!kick <@member>`: Remove a player from their game
@@ -63,12 +63,13 @@ These commands are intended for server admins or moderators. Many require specif
 
 ## Game Management
 - `!createGame [True|False]`: Create an empty game; `True` enables debug mode (debug permission required)
-- `!startGame <ID>`: Force a game to start (skips countdown if applicable). Only the lobby owner or admins can run this.
+- `!startGame <code>`: Start that lobby immediately. Only the lobby host or an admin can run this.
 - `!forceStart` (aliases: `!ownerstart`, `!fs`): Lobby owner (or admins) can force start their current lobby immediately
-- `!skipVotes <ID>`: Skip or cut short voting time
-- `!skipNight <ID>`: Skip the current night
-- `!setWeather <ID> <int>`: Set weather intensity (game cosmetic)
-- `!setMoon <ID> <int>`: Set moon level (game cosmetic)
+- `!skipVotes <code>`: Skip or cut short voting time
+- `!skipNight <code>`: Skip the current night
+- `!setWeather <code> <int>`: Set weather intensity
+- `!setMoon <code> <int>`: Set moon level
+- `!settingspanel`: Open the admin panel for active games, timers, disabled commands, and the prefix
  - `!settings [setting] [value]` — permission: `admin.settings`
 	 - Configure game behavior: minimum/maximum players, timers, toggles, etc.
 
@@ -110,16 +111,16 @@ These advanced commands were primarily built for debugging and may be confusing 
 - `!skipObjectiveTimer <member>` — permission: `debug.objectives.skipObjectiveTimer`
 	- Skips the in‑between objective timer for the specified member.
 
-- `!setMoon <game ID> <brightness (1-5)>` — permission: `debug.game.setMoon`
+- `!setMoon <code> <brightness (1-5)>` — permission: `debug.game.setMoon`
 	- Sets moon brightness in the specified game. 1 = no moon, 5 = full moon. Use after the weather forecast and before night starts.
 
-- `!setWeather <game ID> <intensity (0-99)>` — permission: `debug.game.setWeather`
+- `!setWeather <code> <intensity (0-99)>` — permission: `debug.game.setWeather`
 	- Sets weather intensity (0 = not intense, 99 = very intense). Use after the weather forecast and before night starts.
 
-- `!skipNight <game ID>` — permission: `debug.game.skipNight`
+- `!skipNight <code>` — permission: `debug.game.skipNight`
 	- Skips the night.
 
-- `!skipVotes <game ID>` — permission: `debug.game.skipVotes`
+- `!skipVotes <code>` — permission: `debug.game.skipVotes`
 	- Skips voting time.
 
 See also: [Basics](help.md), [Server Settings](help-settings.md), [Terms](tos.md), [Privacy](pp.md), [Code of Conduct](CODE_OF_CONDUCT.md).

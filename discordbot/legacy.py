@@ -11,15 +11,12 @@ from discord.ext import commands
 from discord.utils import get
 
 import dataStorage
-import permissions
 import tutorial
 from core.config import testingBot, shortMainServerInvite, noPermissionEmbed
 from core.game_state import currentGames
 from .client import client
 
 logger = logging.getLogger("mmb.discord")
-from .helpers import getPlayer, isSpectating
-
 # initialize optional globals to avoid NameError in events
 notificationMessage = None
 
@@ -121,87 +118,6 @@ async def showAllRunningGames(ctx):
     else:
         await ctx.send(":x: Sorry, but you can't do that here! You probably meant: !list")
 
-
-@client.command()
-@commands.cooldown(2, 10, commands.BucketType.user)
-async def spectate(ctx, indexStr=None):
-    if await permissions.hasPermission(ctx, "member.spectate"):
-        if not isSpectating(ctx.author):
-            if indexStr is None:
-                if len(currentGames[ctx.guild.id]) == 1:
-                    indexStr = "0"
-                else:
-                    if ctx.channel != joiningChannel:
-                        await ctx.send(
-                            embed=discord.Embed(title="Please enter a game ID",
-                                                description="To get a game ID, type !list.",
-                                                color=0xff0000))
-            player = getPlayer(ctx.author, ctx.message.guild)
-            if player is None:
-                index = None
-                try:
-                    index = int(indexStr)
-                except ValueError:
-                    if ctx.channel != joiningChannel:
-                        embed = discord.Embed(
-                            title=":x: Please enter a number!",
-                            description=(
-                                "Please enter a game's ID to spectate "
-                                "it. You can get a game's ID with !list."
-                            ),
-                            color=0xff0000
-                        )
-                        await ctx.send(embed=embed)
-                except Exception:
-                    await ctx.send(":x: An unknown error occurred!")
-                    raise
-                else:
-                    games_count = len(currentGames[ctx.guild.id]) - 1
-                    if index <= games_count:
-                        await currentGames[ctx.guild.id][index].addSpectator(
-                            ctx.author
-                        )
-                        if ctx.channel != joiningChannel:
-                            embed = discord.Embed(
-                                title="You are now spectating a game",
-                                description=(
-                                    "The game's channel should appear on "
-                                    "the top of your channel list.\n"
-                                    "To stop spectating, type !spectate again."
-                                ),
-                                color=0x0088ff
-                            )
-                            await ctx.send(embed=embed)
-                    else:
-                        if ctx.channel != joiningChannel:
-                            embed = discord.Embed(
-                                title=":x: That game doesn't exist!",
-                                description=(
-                                    "Please enter a valid game ID. You can "
-                                    "get a game's ID with !list."
-                                )
-                            )
-                            await ctx.send(embed=embed)
-
-
-            else:
-                if ctx.channel != joiningChannel:
-                    embed = discord.Embed(
-                        title=":x: You are already in a game!",
-                        description=(
-                            "You can't spectate a game while you're "
-                            "already in a different game."
-                        ),
-                        color=0xff0000
-                    )
-                    await ctx.send(embed=embed)
-
-        else:
-            for game in currentGames[ctx.guild.id]:
-                if ctx.author in game.spectators:
-                    await game.removeSpectator(ctx.author)
-                    if ctx.channel != joiningChannel:
-                        await ctx.send(embed=discord.Embed(title="You are no longer spectating", color=0x0088ff))
 
 # handling errors
 @client.event

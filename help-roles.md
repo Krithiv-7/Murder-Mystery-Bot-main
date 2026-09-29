@@ -1,6 +1,6 @@
 # Murder‑Mystery‑Bot — Roles Guide
 
-Last updated: September 21, 2026
+Last updated: September 29, 2026
 
 This tutorial lists all roles and their abilities. Some roles are always present; others appear only when enough players have joined the game.
 

@@ -12,7 +12,7 @@ import setup
 import tutorial
 from core.game_state import currentGames, availableGames, allPlayers
 from .client import client
-from .helpers import getPlayer
+from core.utils import getPlayer
 
 
 # Slash commands

@@ -5,7 +5,7 @@ import dataStorage
 import setup
 from core.game_state import allPlayers
 from .client import client
-from .helpers import getPlayer
+from core.utils import getPlayer
 
 
 @client.event

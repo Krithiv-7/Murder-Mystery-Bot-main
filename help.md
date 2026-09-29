@@ -9,9 +9,9 @@ This tutorial is split into four parts:
 - Commands: See the full list in [help-commands.md](help-commands.md)
 
 ## Joining a Game
-- Create a lobby with `!create` (or `/create`). You’ll be added automatically.
-- Share the lobby ID with others. They can join using `!join <ID>` (or `/join <ID>`). Use `!list` (or `/list`) to find IDs.
-- If you have the Discord Administrator permission, include `-overwriteAdminWarning` when joining a lobby (for example: `!join 0 -overwriteAdminWarning`).
+- Create a lobby with `!create` (or `/create`). The host chooses whether to play or spectate.
+- Share the lobby code, such as `MM-7F2A`. Others join with `!join MM-7F2A` or `/join`. Use `!list` or `/list` to see codes.
+- If you have the Discord Administrator permission, include `-overwriteAdminWarning` when joining (for example: `!join MM-7F2A -overwriteAdminWarning`).
 - You can only be in one lobby at a time. Use `!leave` before creating or joining another lobby.
  - Lobby owners can force start their lobby with `!forceStart` (`!ownerstart`/`!fs`).
 
@@ -41,10 +41,10 @@ Nighttime does not follow a fixed order; actions happen based on what players do
 - Other Events: Outcomes depend on roles, items used, and player actions.
 
 ## Basic Commands
-- `!create` — Create a new lobby and join it
-- `!join <ID>` — Join a lobby by ID
-- `!list` — Show running games and IDs
-- `!spectate <ID>` — Spectate a running game
+- `!create` — Create a new lobby. The bot replies with a code such as `MM-7F2A`
+- `!join <code>` — Join a lobby by that code
+- `!list` — Show running games and their codes
+- `!spectate <code>` — Spectate a running game
 - `!leave` — Leave your current game
 - `!vote <@player>` — Vote to execute a player during day
 - `!whisper <@player>` — Temporary private channel with another player (deleted at night)
@@ -52,7 +52,9 @@ Nighttime does not follow a fixed order; actions happen based on what players do
 - `!buy <itemId>` — Buy an item from the shop
 - `!use <itemId> [arg]` — Use an item (some require a target)
 - `!balance` (aliases: `!money`, `!gold`, `!bal`) — Show your gold
- - Slash equivalents: `/create`, `/list`, `/join <ID>`, `/spectate <ID>`
+- Slash equivalents: `/create`, `/list`, `/join`, `/spectate`
+- Admin panel: `!settingspanel` or `/settingspanel` (timers, disabled commands, prefix, active games)
+- Bot status: `!status` or `/status` (admins only). The version is Murder Mystery Bot v2.0.0.
 
 ## Advanced Docs
 - Advanced/Admin Commands: [help-advanced.md](help-advanced.md)

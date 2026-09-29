@@ -11,7 +11,7 @@ import setup
 from core.config import mainServerInvite
 from core.game_state import currentGames
 from .client import client
-from .helpers import getPlayer
+from core.utils import getPlayer
 
 
 @client.command(aliases=["discord", "bug", "reportBug", "report", "suggest", "suggestion", "suggestions"])
@@ -31,27 +31,6 @@ async def dc(ctx):
     embed.set_thumbnail(url=thumb_url)
     await ctx.send(embed=embed)
     await ctx.send(mainServerInvite)
-
-
-@client.command()
-async def purge(ctx, amount):
-    if await permissions.hasPermission(ctx, "admin.purge"):
-        await ctx.message.channel.purge(limit=int(amount))
-
-
-@client.command()
-async def giveGold(ctx, member: discord.Member, amount):
-    if await permissions.hasPermission(ctx, "admin.game.giveGold"):
-        player = getPlayer(member, ctx.message.guild)
-        if player is not None:
-            if player.inGame:
-                intAmount = int(amount)
-                player.gold += intAmount
-                await ctx.send(f"Gave :coin: {amount} gold to {member.mention}")
-            else:
-                ctx.send("That player is not in game!")
-        else:
-            ctx.send("That member is not in game!")
 
 
 @client.command()

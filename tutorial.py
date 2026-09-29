@@ -23,11 +23,11 @@ def getTutorialEmbeds(guild) -> dict:
                               color=0x00b8ff)
         if dataStorage.getGuildData(guild, "useJoinChannel") and guild.get_channel(dataStorage.getGuildData(guild, "joinChannel")) is not None:
             embed.add_field(name="Create & Join",
-                            value=f'Create a lobby with "{p}create" (or /create) in {guild.get_channel(dataStorage.getGuildData(guild, "joinChannel")).mention}. Others can join using "{p}join <ID>" (or /join <ID>). Use "{p}list" to find lobby IDs.',
+                            value=f'Create a lobby with "{p}create" (or /create) in {guild.get_channel(dataStorage.getGuildData(guild, "joinChannel")).mention}. Others can join using "{p}join <code>" (or /join <code>). Use "{p}list" to find lobby codes.',
                             inline=False)
         else:
             embed.add_field(name="Create & Join",
-                            value=f'Create a lobby with "{p}create" (or /create). Others can join using "{p}join <ID>" (or /join <ID>). Use "{p}list" to find lobby IDs.',
+                            value=f'Create a lobby with "{p}create" (or /create). Others can join using "{p}join <code>" (or /join <code>). Use "{p}list" to find lobby codes.',
                             inline=False)
         # Fallback: if rolesTutorialChannel is not configured, avoid referencing .mention
         if rolesTutorialChannel is not None:
@@ -161,14 +161,14 @@ def getTutorialEmbeds(guild) -> dict:
             embed.add_field(name=f"{p}create",
                             value="Create a new lobby (or /create).",
                             inline=False)
-        embed.add_field(name=f"{p}join <ID>",
-                        value=f"Join an existing lobby by ID (or /join <ID>). Use {p}list to find IDs.",
+        embed.add_field(name=f"{p}join <code>",
+                        value=f"Join an existing lobby by code (or /join). Use {p}list to find codes such as MM-7F2A.",
                         inline=False)
         embed.add_field(name=f"{p}list",
-                        value="Shows you all running games with their IDs. Useful for when you need a game ID to spectate a game.",
+                        value="Shows you all running games with their codes, such as MM-7F2A. Use a code to spectate a game.",
                         inline=False)
-        embed.add_field(name=f"{p}spectate <ID>",
-                        value="Spectate a game by ID (or /spectate <ID>). To stop spectating, use !spectate again.",
+        embed.add_field(name=f"{p}spectate <code>",
+                        value="Spectate a game by code (or /spectate). To stop spectating, use !spectate again.",
                         inline=False)
         embed.add_field(name=f"{p}stats <user>",
                         value="Shows you the stats of someone, like how many games they played and how many times they won.",
@@ -183,11 +183,11 @@ def getTutorialEmbeds(guild) -> dict:
         if dataStorage.getGuildData(guild, "useJoinChannel") and guild.get_channel(
                 dataStorage.getGuildData(guild, "joinChannel")) is not None:
             embed.add_field(name="Create & Join",
-                            value=f'Create a lobby with "{p}create" (or /create) in {guild.get_channel(dataStorage.getGuildData(guild, "joinChannel")).mention}. Others can join using "{p}join <ID>" (or /join <ID>). Use "{p}list" to find lobby IDs.',
+                            value=f'Create a lobby with "{p}create" (or /create) in {guild.get_channel(dataStorage.getGuildData(guild, "joinChannel")).mention}. Others can join using "{p}join <code>" (or /join <code>). Use "{p}list" to find lobby codes.',
                             inline=False)
         else:
             embed.add_field(name="Create & Join",
-                            value=f'Create a lobby with "{p}create" (or /create). Others can join using "{p}join <ID>" (or /join <ID>). Use "{p}list" to find lobby IDs.',
+                            value=f'Create a lobby with "{p}create" (or /create). Others can join using "{p}join <code>" (or /join <code>). Use "{p}list" to find lobby codes.',
                             inline=False)
         embed.add_field(name="Roles",
                 value=f"Everyone gets a special role assigned, such as murderer, detective, doctor, etc. That role will have special abilities that can only be used at night time. A full list of all roles can be found here: {ref_roles}",
@@ -312,14 +312,14 @@ def getTutorialEmbeds(guild) -> dict:
             embed.add_field(name=f"{p}create",
                             value="Create a new lobby (or /create).",
                             inline=False)
-        embed.add_field(name=f"{p}join <ID>",
-                        value=f"Join an existing lobby by ID (or /join <ID>). Use {p}list to find IDs.",
+        embed.add_field(name=f"{p}join <code>",
+                        value=f"Join an existing lobby by code (or /join). Use {p}list to find codes such as MM-7F2A.",
                         inline=False)
         embed.add_field(name=f"{p}list",
-                        value="Shows you all running games with their IDs. Useful for when you need a game ID to spectate a game.",
+                        value="Shows you all running games with their codes, such as MM-7F2A. Use a code to spectate a game.",
                         inline=False)
-        embed.add_field(name=f"{p}spectate <ID>",
-                        value="Spectate a game by ID (or /spectate <ID>). To stop spectating, use !spectate again.",
+        embed.add_field(name=f"{p}spectate <code>",
+                        value="Spectate a game by code (or /spectate). To stop spectating, use !spectate again.",
                         inline=False)
         embed.add_field(name=f"{p}stats <user>",
                         value="Shows you the stats of someone, like how many games they played and how many times they won.",

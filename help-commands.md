@@ -1,6 +1,6 @@
 # Murder‑Mystery‑Bot — Commands Guide
 
-Last updated: September 21, 2026
+Last updated: September 29, 2026
 
 This guide lists the main commands you can use during a game and outside of a game.
 
@@ -32,17 +32,17 @@ This guide lists the main commands you can use during a game and outside of a ga
 ## Other Commands (Outside of a Game)
 
 ### `!create`
-- Creates a new lobby and auto-adds you to it. Anyone can create a lobby if they aren’t already in one.
+- Creates a new lobby and shows its code, such as `MM-7F2A`. The host chooses whether to play or spectate. Anyone can create a lobby if they are not already in one.
 
-### `!join <ID>`
-- Joins the lobby with the given ID. Use `!list` to find IDs. You must provide an ID; lobbies are not auto-created by `!join`.
-- If you have the Discord Administrator permission, include `-overwriteAdminWarning` to join (e.g., `!join 0 -overwriteAdminWarning`).
+### `!join <code>`
+- Joins the lobby with that code. Use `!list` to find codes. `!join` does not create a lobby.
+- If you have the Discord Administrator permission, include `-overwriteAdminWarning` (for example: `!join MM-7F2A -overwriteAdminWarning`).
 
 ### `!list`
-- Shows running games and provides a dropdown with Join and Spectate buttons. Text commands remain available.
+- Shows running games and their codes, plus a dropdown with Join and Spectate buttons.
 
-### `!spectate <ID>`
-- Spectate a game with the specified ID. To stop spectating, use `!spectate` again.
+### `!spectate <code>`
+- Spectate the game with that code. If only one lobby exists, the code can be omitted. Use `!spectate` again to stop.
 
 ### `!stats <user>`
 - Shows stats such as how many games a user played and how many wins.

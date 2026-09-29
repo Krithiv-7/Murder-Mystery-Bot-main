@@ -60,6 +60,19 @@ docker compose logs -f
 
 Persistent files live in `./data` (the SQLite database and heartbeat). Backups are written to `./backups`. Logs are written to `./logs`. Those directories are mounted into the container, so `docker compose down` does not delete them.
 
+## Documentation
+
+Player and operator guides in this repository:
+
+- [How to play](help.md)
+- [Commands](help-commands.md)
+- [Roles](help-roles.md)
+- [Items](help-items.md)
+- [Admin commands](help-advanced.md)
+- [Server settings](help-settings.md)
+- [Code layout](MODULAR_STRUCTURE.md)
+- [Privacy](pp.md) and [Terms](tos.md)
+
 ## Commands
 
 Lobby codes look like `MM-7F2A`. Use the code from `!list` or `/list`.

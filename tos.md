@@ -1,6 +1,6 @@
 # Terms of Service — Murder‑Mystery‑Bot
 
-Last updated: September 21, 2026
+Last updated: September 29, 2026
 
 These Terms of Service ("Terms") govern your use of the Murder‑Mystery‑Bot (the "Bot") in Discord servers. By inviting or interacting with the Bot, you agree to these Terms.
 
@@ -14,7 +14,7 @@ These Terms of Service ("Terms") govern your use of the Murder‑Mystery‑Bot (
 - Report vulnerabilities or abuse via the support server or repository issues.
 
 ## 3. Bot Functionality and Availability
-- The Bot is provided "as is" and may change, pause, or stop at any time. Game features include prefix commands, limited slash commands, button/dropdown interactions, public game channels, and DM-based private role instructions where Discord permits delivery.
+- The Bot is provided "as is" and may change, pause, or stop at any time. Game features include prefix and slash commands, buttons, select menus, and DM-based private role instructions where Discord permits delivery. Lobby codes look like `MM-7F2A`.
 - Features may vary between the hosted instance and self‑hosted deployments.
 
 ## 4. Data and Privacy

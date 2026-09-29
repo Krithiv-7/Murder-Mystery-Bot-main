@@ -10,10 +10,9 @@ if [ ! -d ".venv" ]; then
     echo "WARNING: .venv not found. Run ./setup.sh first to create the virtual environment."
 fi
 
-# Check for token: prefer env var, fallback to token.txt
-if [ -z "$DISCORD_TOKEN" ] && [ ! -f "token.txt" ]; then
-    echo "ERROR: No bot token found!"
-    echo "Set DISCORD_TOKEN in the environment, or create token.txt next to start.sh."
+if [ -z "$DISCORD_TOKEN" ] && [ ! -f ".env" ] && [ ! -f "token.txt" ]; then
+    echo "ERROR: No bot token found."
+    echo "Copy .env.example to .env and set DISCORD_TOKEN."
     echo ""
     exit 1
 fi
