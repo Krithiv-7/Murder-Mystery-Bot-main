@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -16,8 +18,20 @@ class SqliteStore:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(self.path, check_same_thread=False)
+        self._lock = threading.RLock()
+        self._cache: dict[tuple, object] = {}
+        self.conn = sqlite3.connect(self.path, check_same_thread=False, timeout=5)
         self.conn.row_factory = sqlite3.Row
+        for attempt in range(5):
+            try:
+                self.conn.execute("PRAGMA journal_mode=WAL")
+                break
+            except sqlite3.OperationalError:
+                if attempt == 4:
+                    raise
+                time.sleep(0.2)
+        self.conn.execute("PRAGMA synchronous=NORMAL")
+        self.conn.execute("PRAGMA busy_timeout=5000")
 
     def close(self) -> None:
         self.conn.close()
@@ -123,6 +137,10 @@ class SqliteStore:
         self.conn.commit()
 
     def set_guild(self, guild_id, key, *, value=None, increase=None):
+        with self._lock:
+            return self._set_guild(guild_id, key, value=value, increase=increase)
+
+    def _set_guild(self, guild_id, key, *, value=None, increase=None):
         self._ensure_guild(str(guild_id))
         if increase is not None:
             current = self.get_guild(guild_id, key, default=0)
@@ -137,8 +155,19 @@ class SqliteStore:
         )
         self._mirror_permission("guild", str(guild_id), key, value)
         self.conn.commit()
+        self._cache[("g", str(guild_id), key)] = value
 
     def get_guild(self, guild_id, key, **kwargs):
+        with self._lock:
+            cache_key = ("g", str(guild_id), key)
+            if cache_key in self._cache:
+                return self._cache[cache_key]
+            value = self._get_guild(guild_id, key, **kwargs)
+            if value is not None or "default" in kwargs:
+                self._cache[cache_key] = value
+            return value
+
+    def _get_guild(self, guild_id, key, **kwargs):
         self._ensure_guild(str(guild_id))
         row = self.conn.execute(
             "SELECT value_json FROM guild_settings WHERE guild_id=? AND key=?",
@@ -152,6 +181,11 @@ class SqliteStore:
         return None
 
     def delete_guild(self, guild_id, key):
+        with self._lock:
+            self._cache.pop(("g", str(guild_id), key), None)
+            return self._delete_guild(guild_id, key)
+
+    def _delete_guild(self, guild_id, key):
         row = self.conn.execute(
             "SELECT value_json FROM guild_settings WHERE guild_id=? AND key=?",
             (str(guild_id), key),
@@ -166,6 +200,12 @@ class SqliteStore:
         return json.loads(row["value_json"])
 
     def set_player(self, guild_id, member_id, key, *, value=None, increase=None):
+        with self._lock:
+            return self._set_player(
+                guild_id, member_id, key, value=value, increase=increase
+            )
+
+    def _set_player(self, guild_id, member_id, key, *, value=None, increase=None):
         self._ensure_player(str(guild_id), str(member_id))
         if increase is not None:
             current = self.get_player(guild_id, member_id, key, default=0)
@@ -184,8 +224,19 @@ class SqliteStore:
                 "member", str(member_id), key, value, guild_id=str(guild_id)
             )
         self.conn.commit()
+        self._cache[("p", str(guild_id), str(member_id), key)] = value
 
     def get_player(self, guild_id, member_id, key, **kwargs):
+        with self._lock:
+            cache_key = ("p", str(guild_id), str(member_id), key)
+            if cache_key in self._cache:
+                return self._cache[cache_key]
+            value = self._get_player(guild_id, member_id, key, **kwargs)
+            if value is not None or "default" in kwargs:
+                self._cache[cache_key] = value
+            return value
+
+    def _get_player(self, guild_id, member_id, key, **kwargs):
         self._ensure_player(str(guild_id), str(member_id))
         row = self.conn.execute(
             """
@@ -202,6 +253,11 @@ class SqliteStore:
         return None
 
     def delete_player(self, guild_id, member_id, key):
+        with self._lock:
+            self._cache.pop(("p", str(guild_id), str(member_id), key), None)
+            return self._delete_player(guild_id, member_id, key)
+
+    def _delete_player(self, guild_id, member_id, key):
         row = self.conn.execute(
             """
             SELECT value_json FROM player_stats
@@ -258,6 +314,9 @@ class SqliteStore:
             """,
             (stored_guild, subject_type, subject_id, json.dumps(value)),
         )
+
+    def _remember_player(self, guild_id, member_id, key, value):
+        self._cache[("p", str(guild_id), str(member_id), key)] = value
 
 
 def _now() -> str:

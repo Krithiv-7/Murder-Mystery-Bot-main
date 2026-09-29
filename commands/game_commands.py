@@ -7,6 +7,7 @@ import permissions
 from core.game_state import currentGames
 from core.lobby import JOIN_MESSAGES, join_block_reason, resolve_guild_game
 from core.manager import game_manager
+from core.action_views import application_id, user_install_url
 from core.utils import getPlayer, isSpectating
 
 
@@ -22,6 +23,15 @@ class HostChoiceView(discord.ui.View):
         self.game = game
         self.host_member = host_member
         self.decided = False
+        app_id = application_id(game.guild)
+        if app_id:
+            self.add_item(
+                discord.ui.Button(
+                    label="Allow DMs from this bot",
+                    style=discord.ButtonStyle.link,
+                    url=user_install_url(app_id),
+                )
+            )
 
     async def interaction_check(self, interaction):
         if interaction.user.id != self.host_member.id:

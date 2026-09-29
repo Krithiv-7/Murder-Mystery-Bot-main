@@ -31,10 +31,25 @@ def get_prefix(bot, message):
     ]
 
 
+class MurderMysteryTree(discord.app_commands.CommandTree):
+    """Reject game commands that are not tied to one server."""
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        command_name = getattr(interaction.command, "name", "")
+        if interaction.guild is not None or command_name in {"ping", "help"}:
+            return True
+        if not interaction.response.is_done():
+            await interaction.response.send_message(
+                "Use this command inside a server.", ephemeral=True
+            )
+        return False
+
+
 client = commands.Bot(
     command_prefix=get_prefix,
     intents=intents,
-    case_insensitive=True
+    case_insensitive=True,
+    tree_cls=MurderMysteryTree,
 )
 
 

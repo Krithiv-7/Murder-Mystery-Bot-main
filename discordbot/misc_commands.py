@@ -273,10 +273,10 @@ async def startSetup(ctx):
 
 @client.command()
 async def invite(ctx):
-    invite_url = (
-        "https://discord.com/api/oauth2/authorize?"
-        "client_id=590980247801954304&permissions=2434133072&scope=bot"
-    )
+    from core.action_views import guild_invite_url
+
+    app_id = client.application_id or client.user.id
+    invite_url = guild_invite_url(app_id)
     await ctx.send(embed=discord.Embed(
         title="Invite Murder Mystery to your own server!",
         description=f"Click this link to invite this bot to your server: {invite_url}",

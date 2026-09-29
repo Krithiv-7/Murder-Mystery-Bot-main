@@ -33,7 +33,7 @@ def getTutorialEmbeds(guild) -> dict:
         if rolesTutorialChannel is not None:
             roles_ref = rolesTutorialChannel.mention
         else:
-            roles_ref = f"the roles list (use {p}advancedHelp or see help-roles)"
+            roles_ref = f"the roles list (use {p}wiki)"
         embed.add_field(name="Roles",
                         value=f"Everyone gets a special role assigned, such as murderer, detective, doctor, etc. That role will have special abilities that can only be used at night time. A full list of all roles can be found here: {roles_ref}",
                         inline=False)

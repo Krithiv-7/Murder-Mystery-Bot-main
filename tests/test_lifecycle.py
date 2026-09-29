@@ -108,6 +108,29 @@ def test_vote_rules_and_cleanup():
         game_manager.remove_game(game)
 
 
+def test_add_player_ignores_a_second_join():
+    from core.game import Game
+
+    guild = SimpleNamespace(id=909, members=[], get_channel=lambda _channel_id: None)
+    game = Game(guild, True)
+
+    class Channel:
+        async def send(self, *args, **kwargs):
+            return None
+
+    game.mainChannel = Channel()
+    member = SimpleNamespace(id=5, display_name="Ada", mention="<@5>")
+
+    async def run():
+        with patch("core.game.dataStorage.getGuildData", return_value=4):
+            first = await game.addPlayer(member)
+            second = await game.addPlayer(member)
+        assert first is second
+        assert len(game.players) == 1
+
+    asyncio.run(run())
+
+
 def test_join_block_reasons_do_not_cross_guilds():
     guild = SimpleNamespace(id=404)
     other = SimpleNamespace(id=405)

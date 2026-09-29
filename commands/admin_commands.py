@@ -147,13 +147,6 @@ class AdminCommands(commands.Cog):
             await ctx.send(embed=discord.Embed(title="I can't find that player in any game!", color=0xff0000))
 
     @commands.command()
-    async def purge(self, ctx, amount):
-        """Delete messages in a channel."""
-        if not await permissions.hasPermission(ctx, "admin.purge"):
-            return
-        await ctx.message.channel.purge(limit=int(amount))
-
-    @commands.command()
     async def giveGold(self, ctx, member: discord.Member, amount):
         """Give gold to a player in a game."""
         if not await permissions.hasPermission(ctx, "admin.game.giveGold"):

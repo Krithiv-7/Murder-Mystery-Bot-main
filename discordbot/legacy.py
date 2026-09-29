@@ -439,7 +439,16 @@ async def on_ready():
     logger.info("Syncing slash commands")
     try:
         synced = await client.tree.sync()
-        logger.info("Synced %s slash command(s)", len(synced))
+        logger.info("Synced %s global slash command(s)", len(synced))
+        for guild in client.guilds:
+            client.tree.clear_commands(guild=guild)
+            client.tree.copy_global_to(guild=guild)
+            guild_synced = await client.tree.sync(guild=guild)
+            logger.info(
+                "Synced %s slash command(s) to guild %s",
+                len(guild_synced),
+                guild.id,
+            )
     except Exception:
         logger.exception("Failed to sync app commands")
     logger.info("Bot ready")

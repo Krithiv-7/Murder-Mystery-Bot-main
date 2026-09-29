@@ -328,7 +328,10 @@ class Game:
         )
 
     async def addPlayer(self, member):
-        """Add a player to the game."""
+        """Add a player to the game. A second join is ignored."""
+        for existing in self.players:
+            if getattr(existing.member, "id", None) == member.id and existing.inGame:
+                return existing
         newPlayer = Player(member, self)
         self.players.append(newPlayer)
         
@@ -361,9 +364,12 @@ class Game:
             await self.mainChannel.send(
                 f"{newPlayer.member.mention}", embed=embed
             )
+        return newPlayer
 
     async def addSpectator(self, member):
         """Add a spectator to the game."""
+        if any(getattr(existing, "id", None) == member.id for existing in self.spectators):
+            return
         self.spectators.append(member)
         await self.mainChannel.send(
             f"{member.mention}",
@@ -617,9 +623,6 @@ class Game:
         # Private game communication is sent through DMs instead of channels.
         self.allPlayers = self.players.copy()
             
-        if self.voiceChannel is not None:
-            await self.voiceChannel.set_permissions(self.role, view_channel=True)
-
         await self.firstDay()
 
     async def firstDay(self):
@@ -652,7 +655,22 @@ class Game:
             value="Your role will be revealed at night."
         )
         mentions = " ".join(p.member.mention for p in self.players)
-        await self.mainChannel.send(mentions, embed=embed)
+        from core.action_views import application_id, dm_link_view
+
+        app_id = application_id(self.guild)
+        embed.add_field(
+            name="Private chat",
+            value=(
+                "Your role and night actions are sent by DM. "
+                "If nothing arrives, press **Allow DMs from this bot**."
+            ),
+            inline=False,
+        )
+        await self.mainChannel.send(
+            mentions,
+            embed=embed,
+            view=dm_link_view(app_id) if app_id else None,
+        )
         
         if not self.debug:
             await asyncio.sleep(15)
@@ -766,20 +784,6 @@ class Game:
         await self.update_status()
 
         await self._remove_night_channels()
-
-        if self.voiceChannel is not None:
-            lock_voice = dataStorage.getGuildData(
-                self.guild, "lockVoiceChannelDuringNight", default=False
-            )
-            if lock_voice:
-                await self.voiceChannel.set_permissions(
-                    self.role, view_channel=False
-                )
-                for member in self.voiceChannel.members:
-                    try:
-                        await member.move_to(None)
-                    except discord.HTTPException:
-                        pass
 
         jailer = None
         emoji = ""
@@ -1352,15 +1356,6 @@ class Game:
         await self.mainChannel.set_permissions(
             self.role, send_messages=True, read_messages=True
         )
-        if self.voiceChannel is not None:
-            lock_voice = dataStorage.getGuildData(
-                self.guild, "lockVoiceChannelDuringNight", default=False
-            )
-            if lock_voice:
-                await self.voiceChannel.set_permissions(
-                    self.role, view_channel=True
-                )
-
         embed = discord.Embed(
             title=f":sunny: Day {self.day}",
             description="The sun is rising, good morning everyone!",

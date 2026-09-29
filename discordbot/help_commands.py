@@ -72,15 +72,6 @@ async def advancedHelp(ctx, category=None):
 async def settings(ctx, setting=None, value=None):
     if await permissions.hasPermission(ctx, "admin.settings"):
         if setting is None:
-            if dataStorage.getGuildData(ctx.guild, "gameVoiceChannel", default=False):
-                voiceChannelValueSting = "Yes"
-            else:
-                voiceChannelValueSting = "No"
-            if dataStorage.getGuildData(ctx.guild, "lockVoiceChannelDuringNight", default=False):
-                voiceChannelLockString = "Yes"
-            else:
-                voiceChannelLockString = "No"
-            # Display reflects default of allowing offline players unless explicitly enabled
             if dataStorage.getGuildData(ctx.guild, "kickOfflinePlayers", default=False):
                 kickOfflinePlayersString = "Yes"
             else:
@@ -102,11 +93,6 @@ async def settings(ctx, setting=None, value=None):
                 "Use !settings <setting> <value> to set a setting\n"
                 "The settings below don't need a value, but they will change "
                 "from 'yes' to 'no' with !settings <setting>\n\n"
-                f"voiceChannel: {voiceChannelValueSting}\n"
-                "Create a voice channel for the game when a game is created\n\n"
-                f"lockVoiceChannelDuringNight: {voiceChannelLockString}\n"
-                "Locks the game's voice channel when it becomes night "
-                "(needs voiceChannel to be set to 'yes')\n\n"
                 f"kickOfflinePlayers: {kickOfflinePlayersString}\n"
                 "Kicks players out of a game when they go offline\n\n\n"
                 "To set permissions, use !permissions and !setPermissions\n"
@@ -118,78 +104,7 @@ async def settings(ctx, setting=None, value=None):
                 color=0x00b8ff
             ))
         else:
-            if setting.lower().strip() == "voicechannel":
-                if dataStorage.getGuildData(ctx.guild, "gameVoiceChannel", default=False):
-                    dataStorage.setGuildData(
-                        ctx.guild, "gameVoiceChannel", value=False
-                    )
-                    await ctx.send(embed=discord.Embed(
-                        title=(
-                            ":white_check_mark: The bot will no longer make "
-                            "a voice channel for a game when the game is "
-                            "created!"
-                        ),
-                        color=0x00ff00
-                    ))
-                else:
-                    dataStorage.setGuildData(
-                        ctx.guild, "gameVoiceChannel", value=True
-                    )
-                    await ctx.send(embed=discord.Embed(
-                        title=(
-                            ":white_check_mark: The bot will now make a "
-                            "voice channel for a game when the game is "
-                            "created!"
-                        ),
-                        color=0x00ff00
-                    ))
-
-            elif setting.lower().strip() == "lockvoicechannelduringnight":
-                bot_member = ctx.guild.get_member(client.user.id)
-                if bot_member.guild_permissions.move_members:
-                    if dataStorage.getGuildData(
-                        ctx.guild, "lockVoiceChannelDuringNight", default=False
-                    ):
-                        dataStorage.setGuildData(
-                            ctx.guild,
-                            "lockVoiceChannelDuringNight",
-                            value=False
-                        )
-                        await ctx.send(embed=discord.Embed(
-                            title=(
-                                ":white_check_mark: The bot will no longer "
-                                "lock the game's voice channel during the "
-                                "night!"
-                            ),
-                            color=0x00ff00
-                        ))
-                    else:
-                        dataStorage.setGuildData(
-                            ctx.guild,
-                            "lockVoiceChannelDuringNight",
-                            value=True
-                        )
-                        await ctx.send(embed=discord.Embed(
-                            title=(
-                                ":white_check_mark: The bot will now lock "
-                                "the game's voice channel during the night!"
-                            ),
-                            color=0x00ff00
-                        ))
-                else:
-                    await ctx.send(embed=discord.Embed(
-                        title=(
-                            ":x: This setting requires the permission "
-                            "'move members'."
-                        ),
-                        description=(
-                            "Please add the permission 'move members' to the "
-                            "bot's role in your server's settings"
-                        ),
-                        color=0xff0000
-                    ))
-
-            elif setting.lower().strip() == "kickofflineplayers":
+            if setting.lower().strip() == "kickofflineplayers":
                 # Toggle, using default False (allow offline by default)
                 if dataStorage.getGuildData(
                     ctx.guild, "kickOfflinePlayers", default=False

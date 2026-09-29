@@ -3,6 +3,33 @@ import random
 import objectives
 
 
+async def notify_doctor(doctor, victim):
+    """DM the doctor that someone was attacked, with heal buttons."""
+    if doctor is None or not getattr(doctor, "inGame", False):
+        return
+    doctor_role = doctor.role
+    if getattr(doctor_role, "permAbilityUsed", False):
+        return
+    doctor_role.healable = victim
+    from core.action_views import HealView
+
+    if victim == doctor:
+        title = ":pill: You were attacked. Heal yourself?"
+        warning = (
+            "You can only heal once. If you refuse, a healing item can still save you."
+        )
+    else:
+        title = f":pill: {victim.member.display_name} was attacked. Heal them?"
+        warning = "You can only heal once this game."
+    embed = discord.Embed(
+        title=title,
+        description="Use the buttons, or reply `yes` or `no` in this chat.",
+        color=0x16ff00,
+    )
+    embed.add_field(name="Warning", value=warning, inline=False)
+    await doctor_role.safe_role_send(embed=embed, view=HealView(doctor_role))
+
+
 class role:
     def __init__(self, player, roleName):
         self.player = player
@@ -225,6 +252,13 @@ class role:
     async def safe_role_send(self, *args, **kwargs):
         return await self.player.send_private(*args, **kwargs)
 
+    async def _send_player_choice(self, embed):
+        from core.action_views import player_select
+
+        self.addPlayersToEmbed(embed)
+        embed.set_footer(text="Use the menu, or type the number.")
+        await self.safe_role_send(embed=embed, view=player_select(self))
+
     async def safe_channel_send(self, channel, *args, **kwargs):
         return await self.game.safe_send(channel, *args, **kwargs)
 
@@ -271,10 +305,12 @@ class role:
     async def sendRoleChannelEmbed(self):
         if self.name == "murderer":
             if self.game.moon != 1:
-                embed = self.addPlayersToEmbed(
-                    discord.Embed(title="Choose someone to kill", description="Type a number bellow to kill someone",
-                                  color=0xff0b00))
-                await self.safe_role_send(embed=embed)
+                embed = discord.Embed(
+                    title=":dagger: Choose someone to kill",
+                    description="Pick a target from the menu.",
+                    color=0xff0b00,
+                )
+                await self._send_player_choice(embed)
             else:
                 await self.safe_role_send(
                     embed=discord.Embed(title=":new_moon: It's too dark to locate a target",
@@ -294,10 +330,12 @@ class role:
                                         color=0xff0000))
 
             else:
-                embed = self.addPlayersToEmbed(discord.Embed(title="Choose someone to reveal their role",
-                                                             description="type a number below to reveal their role",
-                                                             color=0x00afff))
-                await self.safe_role_send(embed=embed)
+                embed = discord.Embed(
+                    title=":spy: Choose someone to investigate",
+                    description="Pick a player. Their role arrives next night.",
+                    color=0x00afff,
+                )
+                await self._send_player_choice(embed)
 
         elif self.name == "doctor":
             if not self.roleChannelEmbedSent:
@@ -314,37 +352,39 @@ class role:
                     description="You can't send a broadcast this night.", color=0xff0000))
 
             else:
-                embed = self.addRolesToEmbed(discord.Embed(title="Choose a role to send a message to",
-                                                           description="Type a number bellow to select a role and the person with that role will receive a message of your choice.",
-                                                           color=0x19ff00))
-                embed.add_field(name=f"{len(self.currentRolesList)} Everyone",
-                                value="Type this number to select everyone",
-                                inline=True)
-
-                await self.safe_role_send(embed=embed)
+                embed = discord.Embed(
+                    title=":radio: Choose who hears your broadcast",
+                    description="Pick a role, or Everyone.",
+                    color=0x19ff00,
+                )
+                self.addRolesToEmbed(embed)
+                from core.action_views import role_select
+                await self.safe_role_send(embed=embed, view=role_select(self))
 
         elif self.name == "thief":
-            embed = self.addPlayersToEmbed(discord.Embed(title="Choose someone to steal from",
-                                                         description="There is a 50% chance that you will steal half of their :coin: gold",
-                                                         color=0x4a4a4a))
-            await self.safe_role_send(embed=embed)
+            embed = discord.Embed(
+                title=":unlock: Choose someone to steal from",
+                description="There is a 50% chance you take half their gold.",
+                color=0x4a4a4a,
+            )
+            await self._send_player_choice(embed)
 
 
         elif self.name == "jailer":
-            embed = self.addPlayersToEmbed(discord.Embed(title="Choose someone to put in jail",
-                                                         description="They will be put in jail the next night. While in jail, they can't use their role's ability or use the shop.",
-                                                         color=0x00b8ff))
-            await self.safe_role_send(embed=embed)
+            embed = discord.Embed(
+                title=":cop: Choose someone to jail",
+                description="They are jailed next night and cannot use their ability or the shop.",
+                color=0x00b8ff,
+            )
+            await self._send_player_choice(embed)
 
         elif self.name == "bodyguard":
-            embed = self.addPlayersToEmbed(
-                discord.Embed(
-                    title="Choose someone to protect",
-                    description="If they are attacked tonight, you die instead.",
-                    color=0x3498db,
-                )
+            embed = discord.Embed(
+                title=":shield: Choose someone to protect",
+                description="If they are attacked tonight, you die instead.",
+                color=0x3498db,
             )
-            await self.safe_role_send(embed=embed)
+            await self._send_player_choice(embed)
 
         elif self.name == "medium":
             dead_players = [
@@ -368,11 +408,12 @@ class role:
 
         elif self.name == "werewolf":
             if self.game.moon == 5:
-                embed = self.addPlayersToEmbed(
-                    discord.Embed(title="Choose someone to kill",
-                                  description="Type a number bellow to kill someone. If you don't choose someone, someone will be randomly chosen.",
-                                  color=0xffda83))
-                await self.safe_role_send(embed=embed)
+                embed = discord.Embed(
+                    title=":wolf: Choose someone to kill",
+                    description="If you do not choose, someone is picked for you.",
+                    color=0xffda83,
+                )
+                await self._send_player_choice(embed)
             else:
                 await self.safe_role_send(
                     embed=discord.Embed(title="You can only use your ability during full moon",
@@ -381,19 +422,26 @@ class role:
 
         elif self.name == "hunter":
             if not self.permAbilityUsed:
-                await self.safe_role_send(embed=self.addPlayersToEmbed(
-                    discord.Embed(title="Choose someone to shoot",
-                                  description="If they're not the :dagger: murderer or :wolf: werewolf, you die and they don't.",
-                                  color=0xc1694f)))
+                embed = discord.Embed(
+                    title=":hunter: Choose someone to shoot",
+                    description="If they are not the murderer or werewolf, you die and they live.",
+                    color=0xc1694f,
+                )
+                await self._send_player_choice(embed)
 
 
         elif self.name == "cupid":
             if not self.permAbilityUsed:
                 self.choosingSecondPlayer = False
-                await self.safe_role_send(embed=self.addPlayersToEmbed(
-                    discord.Embed(title="Choose 2 players to fall in love",
-                                  description="You can choose to make 2 players (including yourself) fall in love with each other. Players in love can talk to each other during night time, but if one of them dies the other one dies too. If the murderer falls in love with a villager, the murderer must murder everyone except for their lover.\n\nChoose the first player now, and then choose the other player. You can only use this ability one",
-                                  color=0xf4acba)))
+                embed = discord.Embed(
+                    title=":cupid: Choose two players to fall in love",
+                    description=(
+                        "Choose the first player now, then the second. "
+                        "If one lover dies, the other dies too."
+                    ),
+                    color=0xf4acba,
+                )
+                await self._send_player_choice(embed)
 
     async def processRoleChannelCommand(self, message):
         if not self.player.inJail:
@@ -422,22 +470,9 @@ class role:
                                         if not self.game.findRole("doctor").role.permAbilityUsed:
                                             self.game.findRole("doctor").role.healable = self.currentPlayerList[choice]
                                             # send a message to the doctor that someone was killed
-                                            if self.currentPlayerList[choice] == self.game.findRole("doctor"):
-                                                embed = discord.Embed(
-                                                    title=f"You just got killed by the murderer, revive yourself?",
-                                                    description="Type yes or no to revive them or not.", color=0x16ff00)
-                                                embed.add_field(name="Warning:",
-                                                                value="You can only use this ability once. If you choose to not heal yourself, a healing item such as the ring of life could still heal you.",
-                                                                inline=False)
-                                            else:
-                                                embed = discord.Embed(
-                                                    title=f"Someone just got killed by the murderer, revive them?",
-                                                    description="Type yes or no to revive them or not.", color=0x16ff00)
-                                                embed.add_field(name="Warning:",
-                                                                value="You can only use this ability once.",
-                                                                inline=False)
-
-                                                await self.game.findRole("doctor").role.safe_role_send(embed=embed)
+                                            doctor = self.game.findRole("doctor")
+                                            victim = self.currentPlayerList[choice]
+                                            await notify_doctor(doctor, victim)
 
                                 # send confirmation message
                                 await self.safe_role_send(embed=discord.Embed(
@@ -748,6 +783,9 @@ class role:
                                         {"player": self.currentPlayerList[choice], "title": " got killed",
                                          "DM": ":skull: You got killed by the werewolf!"})
                                     self.abilityUsed = True
+                                    doctor = self.game.findRole("doctor")
+                                    if doctor is not None and doctor.inGame:
+                                        await notify_doctor(doctor, self.currentPlayerList[choice])
 
                                     # send confirmation message
                                     await self.safe_role_send(embed=discord.Embed(

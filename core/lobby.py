@@ -33,9 +33,12 @@ def join_block_reason(member, guild, game) -> str | None:
 
 
 def resolve_guild_game(guild, token):
-    if guild is None:
+    if guild is None or token is None:
         return None
-    return game_manager.get_game(guild.id, token)
+    raw = str(token).strip()
+    if not raw or len(raw) > 16:
+        return None
+    return game_manager.get_game(guild.id, raw)
 
 
 JOIN_MESSAGES = {

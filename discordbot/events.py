@@ -13,7 +13,11 @@ async def on_message(message):
     if isinstance(message.channel, discord.DMChannel):
         for players in allPlayers.values():
             player = next(
-                (candidate for candidate in players if candidate.member == message.author),
+                (
+                    candidate
+                    for candidate in players
+                    if getattr(candidate.member, "id", None) == message.author.id
+                ),
                 None,
             )
             if player is not None and player.inGame:

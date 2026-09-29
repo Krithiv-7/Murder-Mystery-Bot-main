@@ -12,12 +12,35 @@ import setup
 import tutorial
 from core.game_state import currentGames, availableGames, allPlayers
 from .client import client
-from core.utils import getPlayer
+from core.utils import createNewGame, getPlayer
+from discordbot.help_commands import prefix as prefix_command
+from discordbot.help_commands import settings as settings_command
 
 
 # Slash commands
 # Guard against accidental double-dispatch by tracking handled interaction IDs
 _handled_interactions = set()
+
+@client.tree.error
+async def on_app_command_error(interaction: discord.Interaction, error: Exception):
+    import logging
+    logging.getLogger("mmb.discord").error(
+        "Slash command failed",
+        exc_info=error,
+        extra={"command": getattr(interaction.command, "name", "-")},
+    )
+    text = ":x: That command failed. Try again in a moment."
+    from discord import app_commands
+    if isinstance(error, app_commands.CommandOnCooldown):
+        text = f":hourglass: Slow down. Try again in {error.retry_after:.0f} seconds."
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(text, ephemeral=True)
+        else:
+            await interaction.response.send_message(text, ephemeral=True)
+    except discord.HTTPException:
+        pass
+
 
 def _mark_handled(interaction: discord.Interaction) -> bool:
     iid = getattr(interaction, "id", None)
@@ -82,14 +105,16 @@ async def slash_help(interaction: discord.Interaction):
         pass
 
 @client.tree.command(name="create", description="Create a new lobby")
+@discord.app_commands.checks.cooldown(2, 20, key=lambda interaction: (interaction.guild_id, interaction.user.id))
 async def slash_create(interaction: discord.Interaction, debug: bool = False):
     if not _mark_handled(interaction):
         return
+    await interaction.response.defer(ephemeral=True)
     has_debug_create = permissions.memberHasPermission(interaction.user, "debug.createGame")
     # Disallow creating while already in a lobby
     existing_player = getPlayer(interaction.user, interaction.guild)
     if existing_player is not None and existing_player.inGame:
-        await interaction.response.send_message(
+        await interaction.followup.send(
             ":x: You're already in a lobby. Leave it before creating a "
             "new one (use !leave).",
             ephemeral=True
@@ -97,7 +122,7 @@ async def slash_create(interaction: discord.Interaction, debug: bool = False):
         return
     # Respect debug flag permission
     if debug and not has_debug_create:
-        await interaction.response.send_message(
+        await interaction.followup.send(
             ":closed_lock_with_key: You need debug permissions to create "
             "a debug lobby.",
             ephemeral=True
@@ -105,7 +130,7 @@ async def slash_create(interaction: discord.Interaction, debug: bool = False):
         return
     from core.manager import game_manager
     if not game_manager.accepting_new_games:
-        await interaction.response.send_message(
+        await interaction.followup.send(
             ":x: The bot is shutting down and is not accepting new games.",
             ephemeral=True,
         )
@@ -119,12 +144,12 @@ async def slash_create(interaction: discord.Interaction, debug: bool = False):
         interaction.guild, 'prefix', default='!'
     )
     from commands.game_commands import HostChoiceView
-    await interaction.response.send_message(
+    await interaction.followup.send(
         f":white_check_mark: Lobby created! Code: {game.code}. You're the host - "
         f"share this code for others to join with {prefix_val}join {game.code}.\n"
         f"Choose whether to play or just spectate your lobby:",
         view=HostChoiceView(game, interaction.user),
-        ephemeral=True
+        ephemeral=True,
     )
 
 @client.tree.command(name="list", description="List current lobbies")
@@ -165,11 +190,13 @@ async def slash_list(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @client.tree.command(name="join", description="Join a lobby by code")
+@discord.app_commands.checks.cooldown(3, 15, key=lambda interaction: (interaction.guild_id, interaction.user.id))
 async def slash_join(interaction: discord.Interaction, lobby_id: str):
     if not _mark_handled(interaction):
         return
+    await interaction.response.defer(ephemeral=True)
     if not permissions.memberHasPermission(interaction.user, "member.join"):
-        await interaction.response.send_message(
+        await interaction.followup.send(
             ":closed_lock_with_key: You don't have permission to join.",
             ephemeral=True
         )
@@ -178,10 +205,10 @@ async def slash_join(interaction: discord.Interaction, lobby_id: str):
     game_to_join = resolve_guild_game(interaction.guild, lobby_id)
     reason = join_block_reason(interaction.user, interaction.guild, game_to_join)
     if reason is not None:
-        await interaction.response.send_message(JOIN_MESSAGES[reason], ephemeral=True)
+        await interaction.followup.send(JOIN_MESSAGES[reason], ephemeral=True)
         return
     await game_to_join.addPlayer(interaction.user)
-    await interaction.response.send_message(
+    await interaction.followup.send(
         f":white_check_mark: Joined lobby {game_to_join.code}.", ephemeral=True
     )
 
@@ -504,7 +531,7 @@ async def slash_settings(
     if not _mark_handled(interaction):
         return
     await interaction.response.defer(ephemeral=True)
-    await settings.callback(_SlashContext(interaction), setting, value)
+    await settings_command.callback(_SlashContext(interaction), setting, value)
 
 
 @client.tree.command(name="prefix", description="View or change the server prefix")
@@ -512,7 +539,13 @@ async def slash_prefix(interaction: discord.Interaction, new_prefix: str = None)
     if not _mark_handled(interaction):
         return
     await interaction.response.defer(ephemeral=True)
-    await prefix.callback(_SlashContext(interaction), new_prefix)
+    if new_prefix is not None and (len(new_prefix) > 7 or any(ch.isspace() for ch in new_prefix)):
+        await interaction.followup.send(
+            ":x: A prefix must be 1 to 7 characters and cannot contain spaces.",
+            ephemeral=True,
+        )
+        return
+    await prefix_command.callback(_SlashContext(interaction), new_prefix)
 
 
 @client.tree.command(name="whisper", description="Whisper to another player")

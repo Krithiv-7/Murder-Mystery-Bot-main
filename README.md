@@ -2,7 +2,9 @@
 
 A self-hostable Discord game of social deduction. One bot process can run many games in many servers at the same time. Server data stays on your machine in SQLite.
 
-Public invite: https://discord.com/oauth2/authorize?client_id=1452886075621249024&permissions=268823632&integration_type=0&scope=bot%20applications.commands
+Guild invite: https://discord.com/oauth2/authorize?client_id=1452886075621249024&permissions=137439332416&integration_type=0&scope=applications.commands+bot
+
+`client_id` is the Discord application id. The scope always includes `applications.commands`. In the developer portal, enable the **Message Content** and **Server Members** intents before inviting the bot.
 
 Support server: https://discord.gg/kriti
 
@@ -58,20 +60,18 @@ docker compose ps
 docker compose logs -f
 ```
 
-Persistent files live in `./data` (the SQLite database and heartbeat). Backups are written to `./backups`. Logs are written to `./logs`. Those directories are mounted into the container, so `docker compose down` does not delete them.
+Persistent files live in `./data` (the SQLite database and heartbeat). The database uses WAL mode and an in-memory cache so many servers can read settings without waiting on disk. Backups are written to `./backups`. Logs are written to `./logs`. Those directories are mounted into the container, so `docker compose down` does not delete them.
 
 ## Documentation
 
 Player and operator guides in this repository:
 
-- [How to play](help.md)
-- [Commands](help-commands.md)
-- [Roles](help-roles.md)
-- [Items](help-items.md)
-- [Admin commands](help-advanced.md)
-- [Server settings](help-settings.md)
-- [Code layout](MODULAR_STRUCTURE.md)
-- [Privacy](pp.md) and [Terms](tos.md)
+- [How to play](wiki/guides/playing.md)
+- [Commands](wiki/guides/commands.md)
+- [Roles](wiki/guides/roles.md)
+- [Items](wiki/guides/items.md)
+- [Server settings](wiki/guides/settings.md)
+- [Privacy](wiki/guides/privacy.md) and [terms](wiki/guides/terms.md)
 
 ## Commands
 
@@ -147,5 +147,5 @@ make run
 
 - `ERROR: DISCORD_TOKEN is missing.` Add the token to `.env` and run `docker compose up -d` again.
 - The bot is online but ignores `!` commands. Enable the Message Content intent, and check that an admin has not disabled the command in the settings panel.
-- Players cannot use private actions. They need to allow DMs from server members. The bot tells them when a DM fails.
+- A player never receives role DMs. They need to press **Allow DMs from this bot** on the lobby message. That is a user install (`integration_type=1`, `scope=applications.commands`), not a second message from the bot.
 - `docker compose ps` shows the container as unhealthy. Wait for the start period, then check `docker compose logs -f bot`. The health check only looks at a heartbeat file written by the running bot.

@@ -1,8 +1,8 @@
 """Player-facing wiki data: role abilities and faction win conditions.
 
 This is the single source of truth for the in-bot `!wiki` / `/wiki`
-commands (see commands/wiki_commands.py). Content mirrors help-roles.md,
-kept here as structured data so it can be rendered as Discord embeds.
+commands (see commands/wiki_commands.py). Longer written guides live in
+wiki/guides/. Role text here is what `!wiki` and `/wiki` render.
 """
 from .roles import ROLE_WIKI
 from .factions import FACTION_WIKI
