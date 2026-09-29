@@ -1,0 +1,16 @@
+services:
+  bot:
+    build: .
+    env_file:
+      - .env
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+      - ./backups:/app/backups
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "python", "-m", "core.cli", "health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s

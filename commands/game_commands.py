@@ -5,6 +5,8 @@ from discord.ext import commands
 import dataStorage
 import permissions
 from core.game_state import currentGames
+from core.lobby import JOIN_MESSAGES, join_block_reason, resolve_guild_game
+from core.manager import game_manager
 from core.utils import getPlayer, isSpectating
 
 
@@ -71,14 +73,17 @@ class LobbyView(discord.ui.View):
         super().__init__(timeout=180)
         self.author_id = author.id
         self.games = games
-        self.selected_index = None
+        self.selected_code = None
         options = [
             discord.SelectOption(
-                label=f"Lobby {index}",
-                description=f"{len(game.players)} player(s) - {'started' if game.started else 'waiting'}",
-                value=str(index),
+                label=f"Lobby {game.code}",
+                description=(
+                    f"{len(game.players)} player(s) - "
+                    f"{'started' if game.started else 'waiting'}"
+                ),
+                value=game.code,
             )
-            for index, game in enumerate(games)
+            for game in games
         ]
         lobby_select = discord.ui.Select(
             placeholder="Choose a lobby",
@@ -99,35 +104,34 @@ class LobbyView(discord.ui.View):
         return True
 
     async def select_lobby(self, interaction):
-        self.selected_index = int(interaction.data["values"][0])
+        self.selected_code = interaction.data["values"][0]
         await interaction.response.send_message(
-            f"Lobby {self.selected_index} selected. Choose Join or Spectate.",
+            f"Lobby {self.selected_code} selected. Choose Join or Spectate.",
             ephemeral=True,
         )
 
     async def _selected_game(self, interaction):
-        if self.selected_index is None:
+        if self.selected_code is None:
             await interaction.response.send_message(
                 "Choose a lobby first.", ephemeral=True
             )
             return None
-        if self.selected_index >= len(self.games):
+        game = next((item for item in self.games if item.code == self.selected_code), None)
+        if game is None:
             await interaction.response.send_message(
                 "That lobby is no longer available.", ephemeral=True
             )
             return None
-        return self.games[self.selected_index]
+        return game
 
     @discord.ui.button(label="Join", style=discord.ButtonStyle.success, emoji="✅")
     async def join_lobby(self, interaction, button):
         game = await self._selected_game(interaction)
         if game is None:
             return
-        if game.started:
-            await interaction.response.send_message("That game already started.", ephemeral=True)
-            return
-        if getPlayer(interaction.user, interaction.guild) is not None:
-            await interaction.response.send_message("You are already in a game.", ephemeral=True)
+        reason = join_block_reason(interaction.user, interaction.guild, game)
+        if reason is not None:
+            await interaction.response.send_message(JOIN_MESSAGES[reason], ephemeral=True)
             return
         await game.addPlayer(interaction.user)
         await interaction.response.send_message("You joined the lobby.", ephemeral=True)
@@ -155,10 +159,11 @@ class GameCommands(commands.Cog):
         return discord.Embed(title=title, description=description, color=color)
 
     @staticmethod
-    def _parse_lobby_id(args):
+    def _parse_lobby_code(args):
         for token in args:
-            if token.lstrip('-').isdigit():
-                return token
+            if token.lower() == "-overwriteadminwarning":
+                continue
+            return token
         return None
 
     @commands.command()
@@ -176,7 +181,7 @@ class GameCommands(commands.Cog):
         overwrite_admin = any(
             token.lower() == "-overwriteadminwarning" for token in tokens
         )
-        index_str = self._parse_lobby_id(tokens)
+        index_str = self._parse_lobby_code(tokens)
 
         allowed_to_run = True
         join_channel = guild.get_channel(
@@ -202,71 +207,47 @@ class GameCommands(commands.Cog):
             if allowed_to_run:
                 if index_str is None:
                     await ctx.send(embed=self._error_embed(
-                        ":x: Please provide a lobby ID",
-                        f"Use {prefix}list to find lobby IDs, then run "
-                        f"{prefix}join <ID>. To create a lobby, use "
+                        ":x: Please provide a lobby code",
+                        f"Use {prefix}list to find lobby codes, then run "
+                        f"{prefix}join <code>. To create a lobby, use "
                         f"{prefix}create."
                     ))
                     return
 
-                existing = getPlayer(author, guild)
-                if existing is not None and existing.inGame:
+                game_to_join = resolve_guild_game(guild, index_str)
+                reason = join_block_reason(author, guild, game_to_join)
+                if reason == "not_found":
+                    await ctx.send(embed=self._error_embed(
+                        ":x: Lobby not found",
+                        f"Use {prefix}list to find lobby codes such as MM-7F2A."
+                    ))
+                    return
+                if reason == "already_in_game":
                     await channel.send(embed=self._error_embed(
                         "You are already in a game!",
                         "Leave your current game first.",
                         color=0xff000d,
                     ))
                     return
-
-                if isSpectating(author, guild):
+                if reason == "spectating":
                     await channel.send(embed=self._error_embed(
                         "You can't join while spectating!",
                         "Use !spectate to stop spectating first."
                     ))
                     return
-
-                try:
-                    index = int(index_str)
-                except ValueError:
-                    await ctx.send(embed=self._error_embed(
-                        ":x: Invalid ID",
-                        "Please provide a numeric lobby ID."
-                    ))
-                    return
-
-                if guild.id not in currentGames:
-                    currentGames[guild.id] = []
-
-                if not (0 <= index < len(currentGames[guild.id])):
-                    await ctx.send(embed=self._error_embed(
-                        ":x: Lobby not found",
-                        f"Use {prefix}list to find lobby IDs."
-                    ))
-                    return
-
-                game_to_join = currentGames[guild.id][index]
-
-                if game_to_join.started:
+                if reason == "started":
                     await ctx.send(embed=self._error_embed(
                         ":x: This lobby has already started",
                         f"Join an available lobby or create a new one with {prefix}create."
                     ))
                     return
-
-                max_players = dataStorage.getGuildData(
-                    ctx.guild, "maxPlayers", default=30
-                )
-                if len(game_to_join.players) >= max_players:
+                if reason == "full":
                     await ctx.send(embed=self._error_embed(
                         ":x: This lobby is full",
-                        f"Max players: {max_players}. Choose another lobby or create a new one."
+                        "Choose another lobby or create a new one."
                     ))
                     return
-
-                kick_offline = dataStorage.getGuildData(
-                    guild, "kickOfflinePlayers", default=False
-                )
-                if author.status == discord.Status.offline and kick_offline:
+                if reason == "offline":
                     await channel.send(embed=self._error_embed(
                         "You can't play if your status is offline!",
                         "Change your status and try again."
@@ -278,7 +259,7 @@ class GameCommands(commands.Cog):
                 confirm_embed = discord.Embed(
                     title=":white_check_mark: You joined lobby!",
                     description=(
-                        f"Lobby ID: {index} | "
+                        f"Lobby: {game_to_join.code} | "
                         f"Players: {len(game_to_join.players)}"
                     ),
                     color=0x00ff00
@@ -295,7 +276,7 @@ class GameCommands(commands.Cog):
                     "This game hides channels from other players. "
                     "With admin perms, you can see all channels.\n\n"
                     "**Use an alt account without admin to play.**\n\n"
-                    f"Override: `{prefix}join <ID> -overwriteAdminWarning`"
+                    f"Override: `{prefix}join <code> -overwriteAdminWarning`"
                 ),
                 color=0xfff100
             )
@@ -340,8 +321,10 @@ class GameCommands(commands.Cog):
                 playerList = "There are no players in this game"
 
             embed.add_field(
-                name=f"ID: {currentGames[ctx.guild.id].index(game)}",
-                value=f"Started: {game.started}, day {game.day}, players: {playerList}"
+                name=f"ID: {game.code}",
+                value=(
+                    f"Phase: {game.phase}, day {game.day}, players: {playerList}"
+                ),
             )
 
         view = LobbyView(ctx.author, games) if games else None
@@ -357,48 +340,39 @@ class GameCommands(commands.Cog):
         from core.game_state import joiningChannel
         
         if not isSpectating(ctx.author, ctx.guild):
+            games = game_manager.get_games(ctx.guild.id)
             if indexStr is None:
-                if len(currentGames.get(ctx.guild.id, [])) == 1:
-                    indexStr = "0"
+                if len(games) == 1:
+                    indexStr = games[0].code
                 else:
                     if ctx.channel != joiningChannel:
                         await ctx.send(embed=discord.Embed(
-                            title="Please enter a game ID",
-                            description="To get a game ID, type !list.",
+                            title="Please enter a lobby code",
+                            description="To get a lobby code, type !list.",
                             color=0xff0000
                         ))
                         return
-                        
+
             player = getPlayer(ctx.author, ctx.message.guild)
             if player is None:
-                try:
-                    index = int(indexStr)
-                except ValueError:
+                game = resolve_guild_game(ctx.guild, indexStr)
+                if game is not None:
+                    await game.addSpectator(ctx.author)
                     if ctx.channel != joiningChannel:
                         await ctx.send(embed=discord.Embed(
-                            title=":x: Please enter a number!",
-                            description="Please enter a game's ID to spectate it.",
-                            color=0xff0000
+                            title="You are now spectating a game",
+                            description=(
+                                f"Watching {game.code}. "
+                                "To stop spectating, type !spectate again."
+                            ),
+                            color=0x0088ff
                         ))
-                    return
-                except Exception:
-                    await ctx.send(":x: An unknown error occurred!")
-                    raise
                 else:
-                    if index <= len(currentGames.get(ctx.guild.id, [])) - 1:
-                        await currentGames[ctx.guild.id][index].addSpectator(ctx.author)
-                        if ctx.channel != joiningChannel:
-                            await ctx.send(embed=discord.Embed(
-                                title="You are now spectating a game",
-                                description="To stop spectating, type !spectate again.",
-                                color=0x0088ff
-                            ))
-                    else:
-                        if ctx.channel != joiningChannel:
-                            await ctx.send(embed=discord.Embed(
-                                title=":x: That game doesn't exist!",
-                                description="Please enter a valid game ID."
-                            ))
+                    if ctx.channel != joiningChannel:
+                        await ctx.send(embed=discord.Embed(
+                            title=":x: That game doesn't exist!",
+                            description="Please enter a valid lobby code."
+                        ))
             else:
                 if ctx.channel != joiningChannel:
                     await ctx.send(embed=discord.Embed(
@@ -440,27 +414,30 @@ class GameCommands(commands.Cog):
         else:
             debug = False
 
+        if not game_manager.accepting_new_games:
+            await ctx.send(":x: The bot is shutting down and is not accepting new games.")
+            return
+
         from core.utils import createNewGame
         game = await createNewGame(
             ctx.message.guild, debug, reason="prefix-create", channel=ctx.channel
         )
         game.owner_id = ctx.author.id
 
-        idx = currentGames[ctx.guild.id].index(game)
         prefix = dataStorage.getGuildData(ctx.guild, 'prefix', default='!')
         if not debug:
             embed = discord.Embed(
                 title="A new lobby has been created! You're the host.",
                 description=(
-                    f"Lobby ID: {idx}. Share this ID for others to join with "
-                    f"{prefix}join {idx}\n\n"
+                    f"Lobby code: {game.code}. Share this code so others can join with "
+                    f"{prefix}join {game.code}\n\n"
                     "Choose whether to play or just spectate your lobby:"
                 )
             )
         else:
             embed = discord.Embed(
                 title="A new lobby has been created in debugging mode!",
-                description=f"Lobby ID: {idx}. Choose whether to play or spectate:"
+                description=f"Lobby code: {game.code}. Choose whether to play or spectate:"
             )
         await ctx.send(embed=embed, view=HostChoiceView(game, ctx.author))
 

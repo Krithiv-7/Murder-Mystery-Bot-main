@@ -44,17 +44,17 @@ def getPlayer(member, guild):
 
 async def createNewGame(guild_or_client, debug_or_guild=False, debug=False, reason: str = "explicit", channel=None):
     """Create and initialize a new Game instance."""
-    from core.game import Game
-
     guild, client, actual_debug = _resolve_game_factory_args(
         guild_or_client,
         debug_or_guild=debug_or_guild,
         debug=debug,
     )
 
-    newGame = Game(guild, actual_debug)
-    await newGame.createGame(client=client, channel=channel)
-    return newGame
+    from core.manager import game_manager
+
+    return await game_manager.create_game(
+        guild, actual_debug, client=client, channel=channel
+    )
 
 
 def isSpectating(member, guild):
@@ -83,28 +83,25 @@ def getLen(guild):
 
 
 def getAvailableGame(guild, lobby_id=None):
-    """Get an available game to join, optionally by lobby ID."""
+    """Get an available game to join, optionally by stable lobby code."""
     from core.game_state import availableGames
-    
+    from core.ids import normalize_code
+
     if guild.id not in availableGames:
         return None
-    
+
     games = availableGames[guild.id]
     if not games:
         return None
-    
+
     if lobby_id is not None:
-        # Find game by lobby ID
-        try:
-            idx = int(lobby_id)
-            if 0 <= idx < len(games):
-                return games[idx]
-        except (ValueError, TypeError):
-            pass
+        wanted = normalize_code(str(lobby_id))
+        for game in games:
+            if getattr(game, "code", None) == wanted:
+                return game
         return None
-    
-    # Return first available game
-    return games[0] if games else None
+
+    return games[0]
 
 
 def findGameByPlayer(member, guild):

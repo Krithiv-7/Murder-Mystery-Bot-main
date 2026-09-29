@@ -16,9 +16,12 @@ intents.reactions = True
 
 def get_prefix(bot, message):
     """Get command prefix for the bot."""
-    prefix = "!"
+    from core.config import GAME_DEFAULTS
+    prefix = GAME_DEFAULTS["prefix"]
     if message.guild is not None:
-        prefix = dataStorage.getGuildData(message.guild, "prefix", default="!")
+        prefix = dataStorage.getGuildData(
+            message.guild, "prefix", default=GAME_DEFAULTS["prefix"]
+        )
     return [
         f"<@!{bot.user.id}> ",
         f"<@{bot.user.id}> ",
@@ -49,4 +52,15 @@ async def enforce_disabled_commands(ctx):
 @client.event
 async def setup_hook():
     """Load command cogs at startup to keep bot.py slim."""
+    import asyncio
+
+    from core.cli import write_heartbeat
+
     await setup_cogs(client)
+
+    async def _heartbeat():
+        while True:
+            write_heartbeat()
+            await asyncio.sleep(20)
+
+    asyncio.create_task(_heartbeat())

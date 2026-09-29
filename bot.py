@@ -1,33 +1,35 @@
-"""Entry point: wires up the Discord client and starts the bot.
-
-The bulk of bot.py's implementation now lives under discordbot/ (see
-MODULAR_STRUCTURE.md) - importing each module below registers its
-events/commands onto the shared `client` as a side effect.
-"""
+"""Entry point: wires up the Discord client and starts the bot."""
+import asyncio
 import logging
 import os
+import signal
 
-from dataStorage import initializeDataStorage
 from core.config import localStorage
+from core.logging_config import configure_logging
+from dataStorage import flush, initializeDataStorage
 
+logger = logging.getLogger("mmb.startup")
+configure_logging()
+logger.info("Loading configuration")
+logger.info("Connecting to database")
 initializeDataStorage(localStorage)
+logger.info("Loading commands")
+logger.info("Loading game systems")
 
 from discordbot.client import client
 from discordbot.helpers import createNewGame
-import discordbot.events  # noqa: F401  (registers on_message/on_guild_join/...)
-import discordbot.legacy  # noqa: F401  (registers on_ready and main-guild-only commands)
+import discordbot.events  # noqa: F401
+import discordbot.legacy  # noqa: F401
 import discordbot.debug_commands  # noqa: F401
-import discordbot.game_commands  # noqa: F401
 import discordbot.misc_commands  # noqa: F401
 import discordbot.help_commands  # noqa: F401
 import discordbot.permission_commands  # noqa: F401
 import discordbot.slash_commands  # noqa: F401
 
-# Prefer cog-based commands; remove legacy inline registrations to avoid duplicates
 LEGACY_COMMANDS = [
     "join", "list", "spectate", "create", "creategame",
     "resetstate", "startgame", "cleanup", "endgame", "kick", "purge", "givegold",
-    "whisper", "vote", "use", "shop", "balance", "buy", "leave", "forcestart"
+    "whisper", "vote", "use", "shop", "balance", "buy", "leave", "forcestart",
 ]
 
 
@@ -42,34 +44,61 @@ _remove_legacy_commands()
 
 
 def resolve_token():
-    """Resolve the bot token from environment variables or local config."""
-    token = os.environ.get("DISCORD_TOKEN")
+    """Resolve the bot token from the environment."""
+    token = os.environ.get("DISCORD_TOKEN", "").strip()
     if token:
         return token
 
     token_path = os.path.join(os.path.dirname(__file__), "token.txt")
     try:
         with open(token_path, "r", encoding="utf-8") as token_file:
-            return token_file.read().strip()
-    except FileNotFoundError as exc:
-        raise RuntimeError(
-            "Bot token not found. Set DISCORD_TOKEN env var or create token.txt next to bot.py."
-        ) from exc
+            token = token_file.read().strip()
+    except FileNotFoundError:
+        token = ""
+    if token:
+        return token
+    raise RuntimeError(
+        "ERROR: DISCORD_TOKEN is missing.\nSet DISCORD_TOKEN in .env."
+    )
+
+
+async def _serve(token: str) -> None:
+    from core.manager import game_manager
+
+    loop = asyncio.get_running_loop()
+
+    async def _shutdown():
+        logger.info("Shutting down")
+        game_manager.request_shutdown()
+        flush()
+        await client.close()
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, lambda: asyncio.create_task(_shutdown()))
+        except NotImplementedError:
+            signal.signal(sig, lambda *_args: asyncio.get_event_loop().call_soon_threadsafe(
+                lambda: asyncio.create_task(_shutdown())
+            ))
+
+    logger.info("Connecting to Discord")
+    try:
+        await client.start(token)
+    finally:
+        flush()
+        logger.info("Discord connection closed")
 
 
 def main():
-    """Start the Discord bot once the module is executed as a script."""
-    logger = logging.getLogger('discord')
-    logger.setLevel(logging.INFO)
-    log_path = os.path.join(os.path.dirname(__file__), 'log.log')
-    handler = logging.FileHandler(
-        filename=log_path, encoding='utf-8', mode='w'
-    )
-    log_format = '%(asctime)s:%(levelname)s:%(name)s: %(message)s'
-    handler.setFormatter(logging.Formatter(log_format))
-    logger.addHandler(handler)
-
-    client.run(resolve_token())
+    try:
+        token = resolve_token()
+    except RuntimeError as exc:
+        logger.error("%s", exc)
+        raise SystemExit(1) from exc
+    try:
+        asyncio.run(_serve(token))
+    except KeyboardInterrupt:
+        logger.info("Interrupted")
 
 
 if __name__ == "__main__":

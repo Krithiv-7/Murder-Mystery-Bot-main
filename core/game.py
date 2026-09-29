@@ -1,5 +1,6 @@
 """Game class for Murder Mystery bot."""
 import asyncio
+import logging
 import random
 import discord
 
@@ -11,7 +12,7 @@ import objectives
 from roles import role
 
 from .game_state import (
-    currentGames, availableGames, allPlayers,
+    allPlayers,
     mainGuild, mainGameRolePosition, notificationChannel,
     newGamesRole, gamesStartingRole, joiningChannel
 )
@@ -105,12 +106,7 @@ class GameStatusChannel:
         return self.game.guild.get_channel(self.channel_id)
 
     def _tag(self):
-        lobbies = currentGames.get(self.game.guild.id, [])
-        try:
-            idx = lobbies.index(self.game)
-        except ValueError:
-            idx = "?"
-        return f"Lobby #{idx}"
+        return f"Lobby {getattr(self.game, 'code', '?')}"
 
     async def send(self, *args, **kwargs):
         channel = self._resolve()
@@ -141,6 +137,11 @@ class Game:
         self.guild = guild
         self.debug = debug
         self.owner_id = None
+        from core.manager import game_manager
+        self.code = game_manager.allocate_code()
+        self._cleaned = False
+        self._cancel_phase = False
+        self._phase_task = None
 
         # no per-game roles/channels are created anymore; comms are DM +
         # the shared setup channel (see GameStatusChannel/createGame)
@@ -190,15 +191,25 @@ class Game:
 
     def _register_game(self):
         """Ensure the game is tracked in the shared guild registries."""
-        if self.guild.id not in currentGames:
-            currentGames[self.guild.id] = []
-        if self not in currentGames[self.guild.id]:
-            currentGames[self.guild.id].append(self)
+        from core.manager import game_manager
+        game_manager.register(self)
 
-        if self.guild.id not in availableGames:
-            availableGames[self.guild.id] = []
-        if self not in availableGames[self.guild.id]:
-            availableGames[self.guild.id].append(self)
+    @property
+    def phase(self) -> str:
+        """Coarse lifecycle label for status displays."""
+        if self.victory is not None or self.foolWin:
+            return "game_over"
+        if not self.started:
+            return "starting" if self.countDown else "lobby"
+        if self.voteTime:
+            return "voting"
+        if self.nightTime:
+            return "night"
+        return "day"
+
+    async def handle_vote(self, voter_member, target_member):
+        """Adapter used by Discord commands. Core voting stays in record_vote."""
+        return await self.record_vote(voter_member, target_member)
 
     async def record_vote(self, voter_member, target_member):
         """Record or change a player's vote for any command/UI entry point."""
@@ -309,7 +320,12 @@ class Game:
 
         self._register_game()
         await self._notify_new_game()
-        print(f"New game in guild {self.guild.id} ({self.guild.member_count} members)")
+        logging.getLogger("mmb.game").info(
+            "New game %s in guild %s",
+            self.code,
+            self.guild.id,
+            extra={"guild_id": self.guild.id, "game_id": self.code},
+        )
 
     async def addPlayer(self, member):
         """Add a player to the game."""
@@ -512,6 +528,7 @@ class Game:
             return
             
         self.countDown = True
+        self._phase_task = asyncio.current_task()
         countDownCanceled = False
         countDown = dataStorage.getGuildData(
             self.guild, "preGameTimer", default=GAME_DEFAULTS["preGameTimer"]
@@ -534,6 +551,9 @@ class Game:
 
         # Countdown loop
         while countDown > 0:
+            if self._cancel_phase:
+                self.countDown = False
+                return
             if countDown in [120, 90, 60, 30, 10, 5]:
                 await self.mainChannel.send(embed=discord.Embed(
                     title=f"Game starts in {countDown} seconds",
@@ -563,7 +583,8 @@ class Game:
 
         if not countDownCanceled:
             await self.mainChannel.send("Game is starting, please wait...")
-            availableGames[self.guild.id].remove(self)
+            from core.manager import game_manager
+            game_manager.mark_unavailable(self)
             await self.initializeGame()
 
     async def initializeGame(self):
@@ -656,12 +677,20 @@ class Game:
                 return await channel.send(*args, **kwargs)
             except (ClientOSError, ConnectionResetError, OSError, asyncio.TimeoutError) as exc:
                 if attempt >= retries:
-                    print(f"Send failed to channel {getattr(channel, 'id', 'unknown')}: {exc}")
+                    logging.getLogger("mmb.game").warning(
+                        "Send failed to channel %s: %s",
+                        getattr(channel, "id", "unknown"),
+                        exc,
+                    )
                     return None
                 await asyncio.sleep(delay)
             except discord.HTTPException as exc:
                 if attempt >= retries:
-                    print(f"HTTP send failed to channel {getattr(channel, 'id', 'unknown')}: {exc}")
+                    logging.getLogger("mmb.game").warning(
+                        "HTTP send failed to channel %s: %s",
+                        getattr(channel, "id", "unknown"),
+                        exc,
+                    )
                     return None
                 await asyncio.sleep(delay)
         return None
@@ -699,6 +728,8 @@ class Game:
             count = min(count, 3)
 
         while count >= 0:
+            if self._cancel_phase:
+                break
             if self.skipNight:
                 self.skipNight = False
                 break
@@ -1037,6 +1068,8 @@ class Game:
             count = min(count, 3)
 
         while count >= 0:
+            if self._cancel_phase:
+                break
             if len(self.playersThatVoted) == len(self.players):
                 if count > 16:
                     embed = discord.Embed(
@@ -1751,7 +1784,11 @@ class Game:
         await self.cleanUp()
 
     async def cleanUp(self):
-        """Clean up all game resources."""
+        """Clean up all game resources. A second call is a no-op."""
+        if self._cleaned:
+            return
+        self._cleaned = True
+        self._cancel_phase = True
         try:
             for m in list(getattr(self.guild, "members", [])):
                 roles_to_remove = []
@@ -1794,10 +1831,8 @@ class Game:
             except discord.HTTPException:
                 pass
 
-        if self.guild.id in currentGames and self in currentGames[self.guild.id]:
-            currentGames[self.guild.id].remove(self)
-        if self.guild.id in availableGames and self in availableGames[self.guild.id]:
-            availableGames[self.guild.id].remove(self)
+        from core.manager import game_manager
+        game_manager.remove_game(self)
 
 
 # Alias for backward compatibility

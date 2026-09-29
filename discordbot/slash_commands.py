@@ -49,8 +49,12 @@ async def slash_help(interaction: discord.Interaction):
         return
 
     # Always show a concise help embed with the actual server prefix
+    from core.version import __version__
     prefix = dataStorage.getGuildData(interaction.guild, "prefix", default="!")
-    help_embed = discord.Embed(title="Bot Help", color=0x00b8ff)
+    help_embed = discord.Embed(
+        title=f"Murder Mystery Bot v{__version__}",
+        color=0x00b8ff,
+    )
     help_embed.add_field(name="Prefix", value=f"Current server prefix: {prefix}", inline=False)
     help_embed.add_field(
         name="Getting Started",
@@ -99,19 +103,25 @@ async def slash_create(interaction: discord.Interaction, debug: bool = False):
             ephemeral=True
         )
         return
+    from core.manager import game_manager
+    if not game_manager.accepting_new_games:
+        await interaction.response.send_message(
+            ":x: The bot is shutting down and is not accepting new games.",
+            ephemeral=True,
+        )
+        return
     game = await createNewGame(
         interaction.guild, debug and has_debug_create, reason="slash-create",
         channel=interaction.channel,
     )
     game.owner_id = interaction.user.id
-    idx = currentGames[interaction.guild.id].index(game)
     prefix_val = dataStorage.getGuildData(
         interaction.guild, 'prefix', default='!'
     )
     from commands.game_commands import HostChoiceView
     await interaction.response.send_message(
-        f":white_check_mark: Lobby created! ID: {idx}. You're the host - "
-        f"share this ID for others to join with {prefix_val}join {idx}.\n"
+        f":white_check_mark: Lobby created! Code: {game.code}. You're the host - "
+        f"share this code for others to join with {prefix_val}join {game.code}.\n"
         f"Choose whether to play or just spectate your lobby:",
         view=HostChoiceView(game, interaction.user),
         ephemeral=True
@@ -134,30 +144,28 @@ async def slash_list(interaction: discord.Interaction):
     embed = discord.Embed(
         title="Currently running games",
         description=(
-            f"Use {prefix_val}join <ID> to join a lobby that hasn't "
-            f"started yet.\nUse spectate <ID> to watch a game."
+            f"Use {prefix_val}join <code> to join a lobby that hasn't "
+            f"started yet.\nUse spectate <code> to watch a game."
         ),
         color=0x0088ff
     )
-    if interaction.guild.id not in currentGames:
-        currentGames[interaction.guild.id] = []
-    for game in currentGames[interaction.guild.id]:
+    from core.manager import game_manager
+    for game in game_manager.get_games(interaction.guild.id):
         player_mentions = "".join(
             [str(p.member.mention) for p in game.players]
         )
         playerList = player_mentions or "There are no players in this game"
-        game_idx = currentGames[interaction.guild.id].index(game)
         embed.add_field(
-            name=f"ID: {game_idx}",
+            name=f"ID: {game.code}",
             value=(
-                f"Started: {game.started}, day {game.day}, "
+                f"Phase: {game.phase}, day {game.day}, "
                 f"players: {playerList}"
             )
         )
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@client.tree.command(name="join", description="Join a lobby by ID")
-async def slash_join(interaction: discord.Interaction, lobby_id: int):
+@client.tree.command(name="join", description="Join a lobby by code")
+async def slash_join(interaction: discord.Interaction, lobby_id: str):
     if not _mark_handled(interaction):
         return
     if not permissions.memberHasPermission(interaction.user, "member.join"):
@@ -166,44 +174,19 @@ async def slash_join(interaction: discord.Interaction, lobby_id: int):
             ephemeral=True
         )
         return
-    # Prevent joining another lobby if already in one
-    existing_player = getPlayer(interaction.user, interaction.guild)
-    if existing_player is not None and existing_player.inGame:
-        await interaction.response.send_message(
-            ":x: You're already in a lobby. Leave it before joining "
-            "another one (use !leave).",
-            ephemeral=True
-        )
+    from core.lobby import JOIN_MESSAGES, join_block_reason, resolve_guild_game
+    game_to_join = resolve_guild_game(interaction.guild, lobby_id)
+    reason = join_block_reason(interaction.user, interaction.guild, game_to_join)
+    if reason is not None:
+        await interaction.response.send_message(JOIN_MESSAGES[reason], ephemeral=True)
         return
-    guild = interaction.guild
-    if guild.id not in currentGames:
-        currentGames[guild.id] = []
-    if 0 <= lobby_id < len(currentGames[guild.id]):
-        game_to_join = currentGames[guild.id][lobby_id]
-        if game_to_join.started:
-            await interaction.response.send_message(
-                ":x: This lobby has already started.", ephemeral=True
-            )
-            return
-        max_players = dataStorage.getGuildData(
-            guild, "maxPlayers", default=30
-        )
-        if len(game_to_join.players) >= max_players:
-            await interaction.response.send_message(
-                ":x: This lobby is full.", ephemeral=True
-            )
-            return
-        await game_to_join.addPlayer(interaction.user)
-        await interaction.response.send_message(
-            f":white_check_mark: Joined lobby {lobby_id}.", ephemeral=True
-        )
-    else:
-        await interaction.response.send_message(
-            ":x: Lobby not found.", ephemeral=True
-        )
+    await game_to_join.addPlayer(interaction.user)
+    await interaction.response.send_message(
+        f":white_check_mark: Joined lobby {game_to_join.code}.", ephemeral=True
+    )
 
-@client.tree.command(name="spectate", description="Spectate a game by ID")
-async def slash_spectate(interaction: discord.Interaction, lobby_id: int):
+@client.tree.command(name="spectate", description="Spectate a game by code")
+async def slash_spectate(interaction: discord.Interaction, lobby_id: str):
     if not _mark_handled(interaction):
         return
     perm = "member.spectate"
@@ -213,14 +196,12 @@ async def slash_spectate(interaction: discord.Interaction, lobby_id: int):
             ephemeral=True
         )
         return
-    if interaction.guild.id not in currentGames:
-        currentGames[interaction.guild.id] = []
-    if 0 <= lobby_id < len(currentGames[interaction.guild.id]):
-        await currentGames[interaction.guild.id][lobby_id].addSpectator(
-            interaction.user
-        )
+    from core.lobby import resolve_guild_game
+    game = resolve_guild_game(interaction.guild, lobby_id)
+    if game is not None:
+        await game.addSpectator(interaction.user)
         await interaction.response.send_message(
-            f":white_check_mark: Spectating lobby {lobby_id}.",
+            f":white_check_mark: Spectating lobby {game.code}.",
             ephemeral=True
         )
     else:
@@ -569,11 +550,11 @@ async def slash_whisper(interaction: discord.Interaction, member: discord.Member
 async def _slash_debug_game(interaction, permission, lobby_id, attribute, value=None):
     if not await _slash_admin_check(interaction, permission):
         return
-    games = currentGames.get(interaction.guild.id, [])
-    if not 0 <= lobby_id < len(games):
+    from core.manager import game_manager
+    game = game_manager.get_game(interaction.guild.id, lobby_id)
+    if game is None:
         await interaction.response.send_message(":x: Lobby not found.", ephemeral=True)
         return
-    game = games[lobby_id]
     if value is None:
         setattr(game, attribute, True)
     else:
@@ -584,21 +565,21 @@ async def _slash_debug_game(interaction, permission, lobby_id, attribute, value=
 
 
 @client.tree.command(name="skip-votes", description="Skip voting time")
-async def slash_skip_votes(interaction: discord.Interaction, lobby_id: int):
+async def slash_skip_votes(interaction: discord.Interaction, lobby_id: str):
     if not _mark_handled(interaction):
         return
     await _slash_debug_game(interaction, "debug.game.skipVotes", lobby_id, "skipVotingTime")
 
 
 @client.tree.command(name="skip-night", description="Skip the current night")
-async def slash_skip_night(interaction: discord.Interaction, lobby_id: int):
+async def slash_skip_night(interaction: discord.Interaction, lobby_id: str):
     if not _mark_handled(interaction):
         return
     await _slash_debug_game(interaction, "debug.game.skipNight", lobby_id, "skipNight")
 
 
 @client.tree.command(name="set-weather", description="Set weather intensity")
-async def slash_set_weather(interaction: discord.Interaction, lobby_id: int, intensity: int):
+async def slash_set_weather(interaction: discord.Interaction, lobby_id: str, intensity: int):
     if not _mark_handled(interaction):
         return
     await _slash_debug_game(
@@ -607,7 +588,7 @@ async def slash_set_weather(interaction: discord.Interaction, lobby_id: int, int
 
 
 @client.tree.command(name="set-moon", description="Set moon level")
-async def slash_set_moon(interaction: discord.Interaction, lobby_id: int, level: int):
+async def slash_set_moon(interaction: discord.Interaction, lobby_id: str, level: int):
     if not _mark_handled(interaction):
         return
     await _slash_debug_game(interaction, "debug.game.setMoon", lobby_id, "moon", level)
@@ -650,14 +631,14 @@ async def _slash_admin_check(interaction, permission):
 
 
 @client.tree.command(name="start-game", description="Start a lobby immediately")
-async def slash_start_game(interaction: discord.Interaction, lobby_id: int):
+async def slash_start_game(interaction: discord.Interaction, lobby_id: str):
     if not _mark_handled(interaction):
         return
-    games = currentGames.get(interaction.guild.id, [])
-    if not 0 <= lobby_id < len(games):
+    from core.manager import game_manager
+    game = game_manager.get_game(interaction.guild.id, lobby_id)
+    if game is None:
         await interaction.response.send_message(":x: Lobby not found.", ephemeral=True)
         return
-    game = games[lobby_id]
     if getattr(game, "owner_id", None) != interaction.user.id and not permissions.memberHasPermission(
         interaction.user, "admin.game.startGame"
     ):
@@ -686,14 +667,14 @@ async def slash_cleanup(interaction: discord.Interaction):
 
 
 @client.tree.command(name="end-game", description="End one running game")
-async def slash_end_game(interaction: discord.Interaction, lobby_id: int):
+async def slash_end_game(interaction: discord.Interaction, lobby_id: str):
     if not _mark_handled(interaction):
         return
-    games = currentGames.get(interaction.guild.id, [])
-    if not 0 <= lobby_id < len(games):
+    from core.manager import game_manager
+    game = game_manager.get_game(interaction.guild.id, lobby_id)
+    if game is None:
         await interaction.response.send_message(":x: Lobby not found.", ephemeral=True)
         return
-    game = games[lobby_id]
     if getattr(game, "owner_id", None) != interaction.user.id and not permissions.memberHasPermission(
         interaction.user, "admin.endGame"
     ):

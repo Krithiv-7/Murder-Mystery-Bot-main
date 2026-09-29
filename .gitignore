@@ -29,6 +29,12 @@ wheels/
 # Sensitive files
 token.txt
 mongoDBLoginInfo.txt
+.env
+
+# Persistent runtime data
+data/
+backups/
+logs/
 
 # Database
 *.db

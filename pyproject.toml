@@ -1,0 +1,40 @@
+[project]
+name = "murder-mystery-bot"
+version = "2.0.0"
+description = "Self-hostable Discord murder mystery game bot"
+requires-python = ">=3.11"
+dependencies = [
+    "discord.py>=2.2",
+]
+
+[project.optional-dependencies]
+mongo = [
+    "pymongo>=4.0",
+    "dnspython>=2.0",
+]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+check_untyped_defs = false
+follow_imports = "silent"
+files = [
+    "core/manager.py",
+    "core/ids.py",
+    "core/config.py",
+    "core/commands_meta.py",
+    "core/lobby.py",
+    "core/cli.py",
+    "core/version.py",
+    "core/runtime.py",
+    "storage/sqlite_store.py",
+]

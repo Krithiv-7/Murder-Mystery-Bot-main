@@ -1,4 +1,4 @@
-name: Python tests
+name: CI
 
 on:
   push:
@@ -25,8 +25,15 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt pytest
+          python -m pip install -r requirements.txt pytest ruff mypy
+
+      - name: Lint
+        run: |
+          python -m ruff check core/manager.py core/ids.py core/lobby.py core/commands_meta.py core/cli.py core/runtime.py core/version.py storage/sqlite_store.py scripts/migrate.py
+          python -m mypy
 
       - name: Run tests
-        run: |
-          python -m pytest -q
+        run: python -m pytest -q
+
+      - name: Build Docker image
+        run: docker build -t murder-mystery-bot:ci .

@@ -13,6 +13,23 @@ client.remove_command("help")
 @client.command(aliases=["command", "commands"])
 async def help(ctx):
     if await permissions.hasPermission(ctx, "member.help"):
+        from core.commands_meta import category_help_lines
+        from core.version import __version__
+        prefix = dataStorage.getGuildData(ctx.guild, "prefix", default="!")
+        embed = discord.Embed(
+            title=f"Murder Mystery Bot v{__version__}",
+            description=f"Prefix: `{prefix}`. Categories: member, game, admin, debug.",
+            color=0x00b8ff,
+        )
+        for category in ("game", "member", "admin"):
+            lines = category_help_lines(category, prefix)[:8]
+            if lines:
+                embed.add_field(
+                    name=category,
+                    value="\n".join(lines)[:1024],
+                    inline=False,
+                )
+        await ctx.send(embed=embed)
         for v in tutorial.getTutorialEmbeds(ctx.guild)["commands"]:
             await ctx.send(embed=v)
 
@@ -21,6 +38,19 @@ async def help(ctx):
 async def advancedHelp(ctx, category=None):
     if await permissions.hasPermission(ctx, "member.help"):
         p = dataStorage.getGuildData(ctx.guild, "prefix", default="!")
+        from core.commands_meta import category_help_lines
+        if category is not None:
+            lines = category_help_lines(category, p)
+            if not lines:
+                await ctx.send("Unknown help category. Try member, game, admin, or debug.")
+                return
+            embed = discord.Embed(
+                title=f"Advanced help — {category}",
+                description="\n".join(lines)[:4000],
+                color=0x00b8ff,
+            )
+            await ctx.send(embed=embed)
+            return
         if category is None:
             embed = discord.Embed(title="Advanced help", color=0x00b8ff)
             embed.add_field(name=":adult: Member",
@@ -35,276 +65,7 @@ async def advancedHelp(ctx, category=None):
                             value=f"{p}advancedHelp debug - views all commands under the debug permission group.",
                             inline=False)
             await ctx.send(embed=embed)
-        elif category == "member":
-            embed = discord.Embed(title="Advanced help - :adult: Member",
-                                  description="Arguments in <> are required, arguments in [] are optional",
-                                  color=0x00b8ff)
-            embed.add_field(name=f"{p}help", value="permission: member.help\n\nViews a list of all simple commands",
-                            inline=False)
-            embed.add_field(name=f"{p}advancedHelp [category]",
-                            value="permission: member.help\n\nViews a list of all commands", inline=False)
-            embed.add_field(name=f"{p}join",
-                            value="permission: member.join\n\nJoins a game. Depending on how the server is configured, this command might only be usable in a join channel.",
-                            inline=False)
-            embed.add_field(name=f"{p}spectate [id]",
-                            value="permission: member.spectate\n\nSpectates a game. If only one game is running, no ID has to be given.",
-                            inline=False)
-            embed.add_field(name=f"{p}list",
-                            value="permission: member.list\n\nShows all currently running games and their IDs",
-                            inline=False)
-            embed.add_field(name=f"{p}level [player]",
-                            value="permission: member.levels.level\n\nShows the player's level", inline=False)
-            embed.add_field(name=f"{p}objective",
-                            value="permission: member.levels.objective\n\nShows your current objective progress or gives you a new one",
-                            inline=False)
-            embed.add_field(name=f"{p}stats [player]",
-                            value="permission: member.levels.stats\n\nShows your or the player's stats", inline=False)
-            embed.add_field(name=f"{p}prefix",
-                            value="permission: no permissions needed\n\nShows the bot's prefix for this server",
-                            inline=False)
-            await ctx.send(embed=embed)
-        elif category == "admin":
-            embed = discord.Embed(title="Advanced help - :person_in_tuxedo: Admin",
-                                  description="Arguments in <> are required, arguments in [] are optional",
-                                  color=0x00b8ff)
-            embed.add_field(
-                name=f"{p}purge <number>",
-                value=(
-                    "permission: admin.purge\n\n"
-                    "Deletes the last <number> amount of messages"
-                ),
-                inline=False
-            )
-            embed.add_field(
-                name=f"{p}endAllGames",
-                value=(
-                    f"permission: admin.endAllGames\n\n"
-                    f"Ends all currently running games. {p}cleanup does "
-                    "the same."
-                ),
-                inline=False
-            )
-            embed.add_field(
-                name=f"{p}endGame <game ID>",
-                value=(
-                    f"permission: admin.endGame\n\n"
-                    f"Ends the game with the specified ID. Game IDs can "
-                    f"be obtained with {p}list"
-                ),
-                inline=False
-            )
-            embed.add_field(
-                name=f"{p}setup",
-                value="permission: admin.setup\n\nReruns the setup",
-                inline=False
-            )
-            embed.add_field(
-                name=f"{p}settings [setting] [value]",
-                value=(
-                    "permission: admin.settings\n\n"
-                    "Set different kind of settings on how the game "
-                    "behaves, like the amount of players needed to start "
-                    "a game, how long night time takes, ect..."
-                ),
-                inline=False
-            )
-            embed.add_field(
-                name=f"{p}prefix [new prefix]",
-                value=(
-                    "permission: admin.prefix\n\n"
-                    "Shows the bot's current prefix or sets a new one. "
-                    "Members can run this command as well but can't "
-                    "change the prefix without the admin.prefix permission."
-                ),
-                inline=False
-            )
-            embed.add_field(
-                name=f"{p}addPermission <member/role> <permission>",
-                value=(
-                    "permission: admin.permissions.addPermission\n\n"
-                    "Adds a permission to a role or member"
-                ),
-                inline=False
-            )
-            embed.add_field(
-                name=f"{p}removePermission <member/role> <permission>",
-                value=(
-                    "permission: admin.permissions.removePermissions\n\n"
-                    "Removes a permission from a role or member"
-                ),
-                inline=False
-            )
-            embed.add_field(
-                name=f"{p}permissions [member/role]",
-                value=(
-                    "permission: admin.permissions\n\n"
-                    "Views the permissions for the member/role. If no "
-                    "argument is given, it will show all possible permissions."
-                ),
-                inline=False
-            )
-            embed.add_field(
-                name=f"{p}giveGold <player> <amount>",
-                value=(
-                    "permission: admin.game.giveGold\n\n"
-                    "Gives the specified player the specified amount of "
-                    "extra gold in game"
-                ),
-                inline=False
-            )
-            embed.add_field(
-                name=f"{p}kick <player>",
-                value=(
-                    "permission: admin.game.kick\n\n"
-                    "Kicks the specified player out of the game"
-                ),
-                inline=False
-            )
-            embed.add_field(
-                name=f"{p}startGame <game ID>",
-                value=(
-                    "permission: admin.game.startGame\n\n"
-                    "Skips the pre-game timer"
-                ),
-                inline=False
-            )
-            await ctx.send(embed=embed)
-        elif category == "debug":
-            embed = discord.Embed(
-                title="Advanced help - :scroll: Debug",
-                description=(
-                    "Arguments in <> are required, arguments in [] are "
-                    "optional\n\n"
-                    "**These are advanced commands not meant to be used. "
-                    "Feel free to mess around, but most of these commands "
-                    "were made for debugging purposes and will be confusing "
-                    "if you don't have the source code**\n\n"
-                    "**:warning: Some of these commands could break the bot "
-                    "if used incorrectly :warning:**"
-                ),
-                color=0x00b8ff
-            )
-            embed.add_field(
-                name=f"{p}createGame [True/False]",
-                value=(
-                    f"permission: debug.createGame\n\n"
-                    f"Creates an empty game. If you want to start the game "
-                    f"in debugging mode, use {p}createGame True."
-                ),
-                inline=False
-            )
-            embed.add_field(
-                name=f"{p}addObjectiveProgress <member> <task> <value>",
-                value="permission: debug.objectives.addObjectiveProgress\n\nAdds objective progress",
-                inline=False
-            )
-            embed.add_field(
-                name=f"{p}giveObjective <member> <index>",
-                value=(
-                    "permission: debug.objectives.giveObjective\n\n"
-                    "Sets the objective of the player to the specified index."
-                    "\n:warning: Unexpected behaviour might occur if set to "
-                    "an invalid index."
-                ),
-                inline=False
-            )
-            embed.add_field(
-                name=f"{p}completeCurrentObjective <member>",
-                value=(
-                    "permission: debug.objectives.completeCurrentObjective"
-                    "\n\nCompletes the specified member's current objective"
-                ),
-                inline=False
-            )
-            embed.add_field(
-                name=f"{p}skipObjectiveTimer <member>",
-                value=(
-                    "permission: debug.objectives.skipObjectiveTimer\n\n"
-                    "Skips the in-between objective timer of the specified "
-                    "member"
-                ),
-                inline=False
-            )
-            embed.add_field(
-                name=f"{p}setMoon <game ID> <brightness (1-5)",
-                value=(
-                    "permission: debug.game.setMoon\n\n"
-                    "Sets the moon brightness in the specified game. "
-                    "1 is no moon, 5 is full moon.\n"
-                    "Please only use this command after the weather forecast, "
-                    "and before night time starts"
-                ),
-                inline=False
-            )
-            embed.add_field(
-                name=f"{p}setWeather <game ID> <intensity (0-99)>",
-                value=(
-                    "permission: debug.game.setWeather\n\n"
-                    "Sets the weather intensity. 0 for not intense and "
-                    "99 for very intense.\n"
-                    "Please only use this command after the weather forecast, "
-                    "and before night time starts"
-                ),
-                inline=False
-            )
-            embed.add_field(
-                name=f"{p}skipNight <game ID>",
-                value="permission: debug.game.skipNight\n\nSkips the night",
-                inline=False
-            )
-            embed.add_field(
-                name=f"{p}skipVotes <game ID>",
-                value="permission: debug.game.skipVotes\n\nSkips voting time",
-                inline=False
-            )
-            await ctx.send(embed=embed)
-        elif category == "game":
-            embed = discord.Embed(
-                title="Advanced help - :video_game Game",
-                description=(
-                    "Arguments in <> are required, arguments in [] are "
-                    "optional\nThe commands below do not have any permission "
-                    "settings, because they can only be used in game which "
-                    "can only be accessed with the permission 'member.join'."
-                ),
-                color=0x00b8ff
-            )
-            embed.add_field(
-                name=f"{p}vote <player>",
-                value="Vote on the specified player to be executed during game",
-                inline=False
-            )
-            embed.add_field(
-                name=f"{p}shop",
-                value="Views all shop items",
-                inline=False
-            )
-            embed.add_field(
-                name=f"{p}buy <item>",
-                value="Buy an item from the shop",
-                inline=False
-            )
-            embed.add_field(
-                name=f"{p}use <item> [argument]",
-                value=(
-                    "Use an item. The argument being required or not "
-                    "depends on the item."
-                ),
-                inline=False
-            )
-            embed.add_field(
-                name=f"{p}whisper <player>",
-                value=(
-                    "Creates a private channel for the command runner "
-                    "and the specified player to talk in"
-                ),
-                inline=False
-            )
-            embed.add_field(
-                name=f"{p}leave",
-                value="Leaves the game"
-            )
-            await ctx.send(embed=embed)
+
 
 
 @client.command(aliases=["setting", "options", "option", "config", "configuration"])

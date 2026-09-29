@@ -4,10 +4,11 @@ bare module-level globals (mainGuild, joiningChannel, welcomeChannel, ...)
 that on_ready populates via `global`, exactly like the original bot.py -
 kept together in this one file so that pattern still works unmodified.
 """
+import logging
+
 import discord
 from discord.ext import commands
 from discord.utils import get
-import traceback as tb
 
 import dataStorage
 import permissions
@@ -15,6 +16,8 @@ import tutorial
 from core.config import testingBot, shortMainServerInvite, noPermissionEmbed
 from core.game_state import currentGames
 from .client import client
+
+logger = logging.getLogger("mmb.discord")
 from .helpers import getPlayer, isSpectating
 
 # initialize optional globals to avoid NameError in events
@@ -234,6 +237,18 @@ async def on_command_error(ctx, error):
             color=0xff0000
         )
         await sendTo.send(embed=embed)
+    elif isinstance(error, commands.CommandOnCooldown):
+        await sendTo.send(
+            f":hourglass: Slow down. Try again in {error.retry_after:.0f} seconds."
+        )
+    elif isinstance(error, commands.BadArgument):
+        await sendTo.send(":x: That argument was not valid. Check the command help and try again.")
+    elif isinstance(error, commands.CheckFailure):
+        disabled = dataStorage.getGuildData(ctx.guild, "disabledCommands", default=[])
+        if ctx.command is not None and ctx.command.qualified_name in disabled:
+            await sendTo.send(":x: That command is disabled on this server.")
+        else:
+            await sendTo.send(":closed_lock_with_key: You can't use that command here.")
     elif isinstance(error, commands.CommandNotFound):
         if "!d " not in ctx.message.content:
             join_ch = dataStorage.getGuildData(ctx.guild, "joinChannel")
@@ -246,42 +261,31 @@ async def on_command_error(ctx, error):
                     )
                     await sendTo.send(embed=embed)
     elif isinstance(error, ValueError):
-        try:
-            trace = ''.join(
-                tb.format_exception(None, error, error.__traceback__)
-            )
-            embed = discord.Embed(
-                title=":x: Value error!",
-                description=(
-                    f"{trace}\n\n\n"
-                    "This error can be caused by giving the incorrect "
-                    "data type in a command, but it can also be a bug.\n"
-                    "If you think it's a bug, please report it. Otherwise "
-                    "try giving the correct data type, like a number "
-                    "instead of text."
-                ),
-                color=0xff0000
-            )
-            await sendTo.send(embed=embed)
-        except Exception:
-            print("Failed to send an error")
+        logger.error(
+            "Value error in command",
+            exc_info=error,
+            extra={"command": getattr(ctx.command, "qualified_name", "-")},
+        )
+        await sendTo.send(
+            ":x: That value was not valid. Check the command and try again."
+        )
     else:
+        logger.error(
+            "Command failed",
+            exc_info=error,
+            extra={
+                "guild_id": getattr(ctx.guild, "id", "-"),
+                "user_id": getattr(ctx.author, "id", "-"),
+                "command": getattr(ctx.command, "qualified_name", "-"),
+            },
+        )
         try:
-            trace = ''.join(
-                tb.format_exception(None, error, error.__traceback__)
+            await sendTo.send(
+                ":x: Something went wrong while running that command. "
+                "An administrator can check the logs for details."
             )
-            embed = discord.Embed(
-                title=":x: An error occurred!",
-                description=(
-                    f"{trace}\n\n\n"
-                    "Please report this error if you think this is a bug."
-                ),
-                color=0xff0000
-            )
-            await sendTo.send(embed=embed)
         except Exception:
-            print("Failed to send an error")
-        raise error
+            logger.exception("Failed to send an error reply")
 
 
 @client.command()
@@ -449,7 +453,7 @@ async def reloadCache(ctx):
 @client.event
 async def on_ready():
     global mainGuild, modRole, generalChannel, joiningChannel, rulesChannel, introductionChannel, gameTutorialChannel, rolesTutorialChannel, itemsTutorialChannel, bugChannel, errorChannel, infoChannels, welcomeChannel, commandsTutorialChannel, newGamesRole, gamesStartingRole, botUpdatesRole, nonGameRoles, mainGameRolePosition, notificationSettingsChannel, notificationChannel, notificationMessage, data
-    print(f"Logged in as {client.user}")
+    logger.info("Logged in as %s", client.user)
 
     mainGuild = None
     if not testingBot:
@@ -505,13 +509,24 @@ async def on_ready():
             if r.position > mainGameRolePosition:
                 mainGameRolePosition = r.position
         mainGameRolePosition += 1
+        from core.game_state import set_main_guild_globals
+        set_main_guild_globals(
+            mainGuild=mainGuild,
+            mainGameRolePosition=mainGameRolePosition,
+            notificationMessage=notificationMessage,
+            notificationChannel=notificationChannel,
+            newGamesRole=newGamesRole,
+            gamesStartingRole=gamesStartingRole,
+            joiningChannel=joiningChannel,
+        )
 
-    # Sync slash commands (app commands)
+    logger.info("Syncing slash commands")
     try:
         synced = await client.tree.sync()
-        print(f"Synced {len(synced)} slash command(s)")
-    except Exception as e:
-        print(f"Failed to sync app commands: {e}")
+        logger.info("Synced %s slash command(s)", len(synced))
+    except Exception:
+        logger.exception("Failed to sync app commands")
+    logger.info("Bot ready")
 
     await client.change_presence(
         status=discord.Status.online,

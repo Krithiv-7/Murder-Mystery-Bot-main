@@ -1,11 +1,20 @@
-import pymongo
 import json
+import logging
 import os
 import sqlite3
 import time
 
+try:
+    import pymongo
+except ImportError:  # Mongo is an optional extra, not the default backend.
+    pymongo = None
+
+logger = logging.getLogger("mmb.storage")
+
 cache = {}
 printCacheHitsAndMisses = False
+_repo = None
+_backend = "json"
 
 # Module-level globals initialized to safe defaults
 localStorage = True
@@ -37,7 +46,7 @@ def _sqlite_init():
         )
         _sqlite_conn.commit()
     except Exception as e:
-        print(f"[dataStorage] WARNING: Could not initialize SQLite backup: {e}")
+        logger.info(f"[dataStorage] WARNING: Could not initialize SQLite backup: {e}")
 
 def _sqlite_upsert_guild(guild_id: str, key: str, value):
     if not enableSQLiteBackup or _sqlite_conn is None:
@@ -49,7 +58,7 @@ def _sqlite_upsert_guild(guild_id: str, key: str, value):
         )
         _sqlite_conn.commit()
     except Exception as e:
-        print(f"[dataStorage] WARNING: SQLite upsert guild failed: {e}")
+        logger.info(f"[dataStorage] WARNING: SQLite upsert guild failed: {e}")
 
 def _sqlite_delete_guild(guild_id: str, key: str):
     if not enableSQLiteBackup or _sqlite_conn is None:
@@ -58,7 +67,7 @@ def _sqlite_delete_guild(guild_id: str, key: str):
         _sqlite_conn.execute("DELETE FROM guild_kv WHERE guild_id=? AND key=?", (str(guild_id), str(key)))
         _sqlite_conn.commit()
     except Exception as e:
-        print(f"[dataStorage] WARNING: SQLite delete guild failed: {e}")
+        logger.info(f"[dataStorage] WARNING: SQLite delete guild failed: {e}")
 
 def _sqlite_upsert_member(guild_id: str, member_id: str, key: str, value):
     if not enableSQLiteBackup or _sqlite_conn is None:
@@ -70,7 +79,7 @@ def _sqlite_upsert_member(guild_id: str, member_id: str, key: str, value):
         )
         _sqlite_conn.commit()
     except Exception as e:
-        print(f"[dataStorage] WARNING: SQLite upsert member failed: {e}")
+        logger.info(f"[dataStorage] WARNING: SQLite upsert member failed: {e}")
 
 def _sqlite_delete_member(guild_id: str, member_id: str, key: str):
     if not enableSQLiteBackup or _sqlite_conn is None:
@@ -79,31 +88,62 @@ def _sqlite_delete_member(guild_id: str, member_id: str, key: str):
         _sqlite_conn.execute("DELETE FROM member_kv WHERE guild_id=? AND member_id=? AND key=?", (str(guild_id), str(member_id), str(key)))
         _sqlite_conn.commit()
     except Exception as e:
-        print(f"[dataStorage] WARNING: SQLite delete member failed: {e}")
+        logger.info(f"[dataStorage] WARNING: SQLite delete member failed: {e}")
+
+
+def storage_status() -> str:
+    if _repo is not None:
+        return "ok" if _repo.ping() else "error"
+    if _backend == "mongo":
+        return "mongo" if collection is not None else "error"
+    return "json"
+
+
+def flush():
+    if _repo is not None:
+        _repo.flush()
+        return
+    if localStorage:
+        updateData()
 
 
 def initializeDataStorage(local):
-    global localStorage, data, collection
+    global localStorage, data, collection, _repo, _backend
+    from core.config import json_data_path, sqlite_path, storage_backend
+
     localStorage = local
-    # Initialize SQLite disaster-recovery mirror
+    _backend = storage_backend()
+    if _backend != "sqlite":
+        localStorage = _backend != "mongo"
+    if _backend == "sqlite":
+        localStorage = False
+        _repo = _open_sqlite(sqlite_path(), json_data_path())
+        logger.info("Connected to SQLite at %s", sqlite_path())
+        return
+    # Initialize SQLite disaster-recovery mirror for the legacy backends.
     _sqlite_init()
     if not localStorage:
-        print("[dataStorage] Connecting to mongoDB...")
+        logger.info("Connecting to MongoDB")
+        if pymongo is None:
+            raise RuntimeError(
+                "MongoDB storage was requested but pymongo is not installed. "
+                "Install the mongo extra or set MMB_STORAGE=sqlite."
+            )
         try:
             mongoLoginInfoFile = open(os.path.join(BASE_DIR, "mongoDBLoginInfo.txt"), "r", encoding="utf-8")
         except FileNotFoundError:
-            print(
-                "[dataStorage] File mongoDBLoginInfo.txt was not found! If you don't want to use mongoDB for data storage, set localStorage to True in bot.py to use json instead.")
+            logger.error("mongoDBLoginInfo.txt was not found")
+            raise
         try:
             cluster = pymongo.MongoClient(mongoLoginInfoFile.read())
-        except:
-            print(
-                "[dataStorage] Failed to connect to the mongoDB database. Consider changing localStorage to True in bot.py to use json instead. Saving functions will not work and errors will probably occur")
+        except Exception:
+            logger.exception("Failed to connect to MongoDB")
+            raise
 
         mongoLoginInfoFile.close()
         db = cluster["discord"]
         collection = db["murder-mystery"]
-        print("[dataStorage] Connected to mongoDB, fetching cache...")
+        logger.info("[dataStorage] Connected to mongoDB, fetching cache...")
 
         cursor = collection.find({})
         for document in cursor:
@@ -113,29 +153,29 @@ def initializeDataStorage(local):
                     finalDic.pop("_id")
                     break
             cache[document["_id"]] = finalDic
-        # print(cache)
-        print("[dataStorage] Successfully fetched cache!")
+        # logger.info(cache)
+        logger.info("[dataStorage] Successfully fetched cache!")
 
     if localStorage:
-        print("[dataStorage] LocalStorage is on, mongoDB will not be used.")
+        logger.info("[dataStorage] LocalStorage is on, mongoDB will not be used.")
         # Ensure data file exists and load it
         try:
             with open(os.path.join(BASE_DIR, "data.json"), "r", encoding="utf-8") as dataFile:
                 data = json.load(dataFile)
-            print("[dataStorage] Data loaded, making backup...")
+            logger.info("[dataStorage] Data loaded, making backup...")
         except FileNotFoundError:
             data = {}
             with open(os.path.join(BASE_DIR, "data.json"), "w", encoding="utf-8") as dataFile:
                 json.dump(data, dataFile, ensure_ascii=False, indent=2)
-            print("[dataStorage] data.json not found; created a new one.")
+            logger.info("[dataStorage] data.json not found; created a new one.")
         except json.JSONDecodeError:
             # Handle corrupted JSON by backing it up and starting fresh
             corrupted_path = os.path.join(BASE_DIR, "data.json.corrupt")
             try:
                 os.replace(os.path.join(BASE_DIR, "data.json"), corrupted_path)
-                print(f"[dataStorage] WARNING: data.json corrupt; backed up to {corrupted_path} and recreated.")
+                logger.info(f"[dataStorage] WARNING: data.json corrupt; backed up to {corrupted_path} and recreated.")
             except Exception:
-                print("[dataStorage] WARNING: data.json corrupt and could not be backed up; recreating.")
+                logger.info("[dataStorage] WARNING: data.json corrupt and could not be backed up; recreating.")
             data = {}
             with open(os.path.join(BASE_DIR, "data.json"), "w", encoding="utf-8") as dataFile:
                 json.dump(data, dataFile, ensure_ascii=False, indent=2)
@@ -144,7 +184,7 @@ def initializeDataStorage(local):
         try:
             os.makedirs(os.path.join(BASE_DIR, "dataBackup"), exist_ok=True)
         except Exception as e:
-            print(f"[dataStorage] WARNING: Could not ensure backup folder: {e}")
+            logger.info(f"[dataStorage] WARNING: Could not ensure backup folder: {e}")
 
         # Read backup number safely
         num = 0
@@ -157,7 +197,7 @@ def initializeDataStorage(local):
                     f.write("0")
                 num = 0
             except Exception as e:
-                print(f"[dataStorage] WARNING: Could not initialize backupNum: {e}")
+                logger.info(f"[dataStorage] WARNING: Could not initialize backupNum: {e}")
 
         # Write backup file
         try:
@@ -165,13 +205,13 @@ def initializeDataStorage(local):
                 json.dump(data, backupFile, ensure_ascii=False, indent=2)
             with open(os.path.join(BASE_DIR, "backupNum"), "w", encoding="utf-8") as f:
                 f.write(str(num + 1))
-            print(f"[dataStorage] A data backup has been made to dataBackup/backup{num}.json!")
+            logger.info(f"[dataStorage] A data backup has been made to dataBackup/backup{num}.json!")
         except Exception as e:
-            print(f"[dataStorage] WARNING: Failed to write backup: {e}")
+            logger.info(f"[dataStorage] WARNING: Failed to write backup: {e}")
 
 
 def reloadCache():
-    print("[dataStorage] Reloading cache...")
+    logger.info("[dataStorage] Reloading cache...")
     cursor = collection.find({})
     for document in cursor:
         finalDic = document.copy()
@@ -180,11 +220,42 @@ def reloadCache():
                 finalDic.pop("_id")
                 break
         cache[document["_id"]] = finalDic
-    # print(cache)
-    print("[dataStorage] Successfully fetched cache!")
+    # logger.info(cache)
+    logger.info("[dataStorage] Successfully fetched cache!")
+
+
+def _open_sqlite(path, legacy_json):
+    from storage.sqlite_store import SqliteStore
+
+    store = SqliteStore(path)
+    store.migrate()
+    if store.guild_count() == 0 and legacy_json.exists():
+        payload = json.loads(legacy_json.read_text(encoding="utf-8") or "{}")
+        if isinstance(payload, dict) and payload:
+            count = store.import_legacy_document(payload)
+            logger.info("Imported %s guilds from data.json", count)
+    return store
+
+
+def _guild_id(guild):
+    return guild.id
+
+
+def _member_ids(member):
+    return member.guild.id, member.id
 
 
 def setPlayerData(member, key, **kwargs):
+    if _repo is not None:
+        guild_id, member_id = _member_ids(member)
+        _repo.set_player(
+            guild_id,
+            member_id,
+            key,
+            value=kwargs.get("value"),
+            increase=kwargs.get("increase"),
+        )
+        return
     if localStorage:
         if f"{member.guild.id}" not in data:
             data[f"{member.guild.id}"] = {"members": {}}
@@ -239,6 +310,9 @@ def setPlayerData(member, key, **kwargs):
 
 
 def getPlayerData(member, key, **kwargs):
+    if _repo is not None:
+        guild_id, member_id = _member_ids(member)
+        return _repo.get_player(guild_id, member_id, key, **kwargs)
     if localStorage:
         if f"{member.guild.id}" not in data:
             data[f"{member.guild.id}"] = {"members": {}}
@@ -260,12 +334,12 @@ def getPlayerData(member, key, **kwargs):
             if f"{member.id}" in cache[member.guild.id]["members"]:
                 if key in cache[member.guild.id]["members"][f"{member.id}"]:
                     if printCacheHitsAndMisses:
-                        print("[dataStorage] Cache hit!")
+                        logger.info("[dataStorage] Cache hit!")
                     return cache[member.guild.id]["members"][f"{member.id}"][key]
 
         # data not found in cache, so accessing database
         if printCacheHitsAndMisses:
-            print("[dataStorage] Cache miss :(")
+            logger.info("[dataStorage] Cache miss :(")
         if getLen(collection.find({"_id": member.guild.id})) == 0:
             collection.insert_one({"_id": member.guild.id, "members": {}})
             cache[member.guild.id] = {"members": {}}
@@ -289,6 +363,9 @@ def getPlayerData(member, key, **kwargs):
 
 
 def deletePlayerData(member, key):
+    if _repo is not None:
+        guild_id, member_id = _member_ids(member)
+        return _repo.delete_player(guild_id, member_id, key)
     if localStorage:
         if f"{member.guild.id}" not in data:
             data[f"{member.guild.id}"] = {"members": {}}
@@ -326,6 +403,14 @@ def deletePlayerData(member, key):
 
 
 def setGuildData(guild, key, **kwargs):
+    if _repo is not None:
+        _repo.set_guild(
+            _guild_id(guild),
+            key,
+            value=kwargs.get("value"),
+            increase=kwargs.get("increase"),
+        )
+        return
     if localStorage:
         if f"{guild.id}" not in data:
             data[f"{guild.id}"] = {"members": {}}
@@ -360,6 +445,8 @@ def setGuildData(guild, key, **kwargs):
 
 
 def getGuildData(guild, key, **kwargs):
+    if _repo is not None:
+        return _repo.get_guild(_guild_id(guild), key, **kwargs)
     if localStorage:
         # Access local JSON data directly; do not rely on cache when using localStorage
         if f"{guild.id}" not in data:
@@ -390,6 +477,8 @@ def getGuildData(guild, key, **kwargs):
 
 
 def deleteGuildData(guild, key):
+    if _repo is not None:
+        return _repo.delete_guild(_guild_id(guild), key)
     if localStorage:
         if f"{guild.id}" not in data:
             data[f"{guild.id}"] = {"members": {}}
@@ -412,6 +501,8 @@ def deleteGuildData(guild, key):
 
 
 def getAllGuilds():
+    if _repo is not None:
+        return _repo.all_guilds()
     return collection.find({})
 
 

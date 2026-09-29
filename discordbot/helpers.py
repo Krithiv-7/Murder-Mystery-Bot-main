@@ -1,6 +1,8 @@
 """Small stateless helpers shared across bot.py's command/event modules."""
-import discord
+import logging
 import random
+
+import discord
 
 from core.game_state import allPlayers, currentGames
 
@@ -38,7 +40,12 @@ async def createNewGame(guild_or_client, debug_or_guild=False, debug=False, reas
         import inspect
         caller = inspect.stack()[1].function
         guild_id = getattr(guild_or_client, "id", None)
-        print(f"[createNewGame] reason={reason} caller={caller} guild={guild_id}")
+        logging.getLogger("mmb.game").info(
+            "createNewGame reason=%s caller=%s",
+            reason,
+            caller,
+            extra={"guild_id": guild_id},
+        )
     except Exception:
         pass
 
